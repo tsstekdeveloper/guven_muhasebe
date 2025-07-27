@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Main Menu -->
+    <menuitem id="menu_e_invoice_main" 
+              name="E-Fatura"
+              sequence="10"/>
+
+    <!-- E-Invoice Menu -->
+    <menuitem id="menu_invoice_list" 
+              name="Faturalar"
+              parent="menu_e_invoice_main"
+              sequence="10"/>
+
+    <menuitem id="menu_e_invoice_list" 
+              name="e-faturalar"
+              parent="menu_invoice_list"
+              action="action_e_invoice"
+              sequence="10"/>
+    
+    <!-- Reports Menu -->
+    <menuitem id="menu_e_invoice_reports" 
+              name="Raporlar"
+              parent="menu_e_invoice_main"
+              sequence="12"/>
+
+    <menuitem id="menu_e_invoice_report_not_in_logo" 
+              name="Logo'da Bulunmayan Faturalar"
+              parent="menu_e_invoice_reports"
+              action="action_e_invoice_report_not_in_logo"
+              sequence="10"/>
+    
+    <menuitem id="menu_logo_kdv2_report" 
+              name="KDV-2 Listesi"
+              parent="menu_e_invoice_reports"
+              action="action_logo_kdv2_wizard"
+              sequence="20"/>
+
+    <!-- Analytics Menu -->
+    <menuitem id="menu_invoice_analytics" 
+              name="Analizler"
+              parent="menu_e_invoice_main"
+              sequence="15"/>
+
+    <menuitem id="menu_e_invoice_analytics" 
+              name="e-fatura Analizleri"
+              parent="menu_invoice_analytics"
+              action="action_e_invoice_analytics"
+              sequence="10"/>
+
+    <!-- Sync Menu -->
+    <menuitem id="main_sync_menu" 
+              name="Senkronizasyon"
+              parent="menu_e_invoice_main"
+              sequence="20"/>
+
+    <menuitem id="menu_e_invoice_sync" 
+              name="izibiz e-fatura Senkronizasyonu"
+              parent="main_sync_menu"
+              action="action_e_invoice_sync_wizard"
+              sequence="10"/>
+
+    <menuitem id="menu_logo_sync" 
+              name="Logo Senkronizasyonu"
+              parent="main_sync_menu"
+              action="action_logo_sync_wizard"
+              sequence="20"/>
+
+    <!-- Configuration Menu -->
+    <menuitem id="menu_e_invoice_config" 
+              name="Yapılandırma"
+              parent="menu_e_invoice_main"
+              action="action_e_invoice_config"
+              sequence="30"/>
+</odoo>

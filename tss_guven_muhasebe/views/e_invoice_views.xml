@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- E-Invoice list View -->
+    <record id="view_e_invoice_list" model="ir.ui.view">
+        <field name="name">e.invoice.list</field>
+        <field name="model">e.invoice</field>
+        <field name="arch" type="xml">
+            <list string="E-Faturalar" default_order="issue_date, invoice_id">
+                <field name="invoice_id"/>
+                <field name="issue_date"/>
+                <field name="supplier"/>
+                <field name="customer"/>
+                <field name="payable_amount" sum="Total"/>
+                <field name="direction"/>
+                <field name="status_detail"/>
+                <field name="gvn_active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- E-Invoice Form View -->
+    <record id="view_e_invoice_form" model="ir.ui.view">
+        <field name="name">e.invoice.form</field>
+        <field name="model">e.invoice</field>
+        <field name="arch" type="xml">
+            <form string="E-Fatura">
+<!--                 <header>
+                    <field name="status" widget="statusbar" statusbar_visible=""/>
+                </header> -->
+                <sheet>
+<!--                     <div class="oe_button_box" name="button_box">
+                        <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive">
+                            <field name="active" widget="boolean_button" options='{"terminology": "archive"}'/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="invoice_id" readonly="1"/>
+                        </h1>
+                    </div> -->
+                    <group>
+                        <group name="main_info" string="Ana Bilgiler">
+                            <field name="uuid" readonly="1"/>
+                            <field name="direction"/>
+                            <field name="issue_date"/>
+                            <field name="create_date_ws"/>
+                            <field name="invoice_type_code"/>
+                            <field name="profile_id"/>
+                        </group>
+                        <group name="status_info" string="Durum Bilgileri">
+                            <field name="status_detail"/>
+                            <field name="status"/>
+                            <field name="status_description"/>
+                            <field name="status_code"/>
+                            <field name="gib_status_code"/>
+                            <field name="gib_status_description"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group name="sender_info" string="Gönderen/Alıcı">
+                            <field name="sender"/>
+                            <field name="receiver"/>
+                            <field name="supplier"/>
+                            <field name="customer"/>
+                            <field name="from_field"/>
+                            <field name="to_field"/>
+                        </group>
+                        <group name="financial_info" string="Finansal Bilgiler">
+                            <field name="payable_amount"/>
+                            <field name="tax_exclusive_total_amount"/>
+                            <field name="tax_inclusive_total_amount"/>
+                            <field name="allowance_total_amount"/>
+                            <field name="line_extension_amount"/>
+                        </group>
+                    </group>
+                    <group name="other_info" string="Diğer Bilgiler">
+                        <field name="envelope_identifier"/>
+                    </group>
+                    <notebook>
+                        <page string="Notlar">
+                            <field name="notes" placeholder="Fatura ile ilgili notlarınızı buraya yazabilirsiniz..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+<!--                 <div class="oe_chatter">
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids"/>
+                </div> -->
+            </form>
+        </field>
+    </record>
+
+    <!-- E-Invoice Search View -->
+    <record id="view_e_invoice_search" model="ir.ui.view">
+        <field name="name">e.invoice.search</field>
+        <field name="model">e.invoice</field>
+        <field name="arch" type="xml">
+            <search string="E-Fatura Ara">
+                <field name="invoice_id"/>
+                <field name="uuid"/>
+                <field name="sender"/>
+                <field name="receiver"/>
+                <field name="customer"/>
+                <field name="supplier"/>
+                <separator/>
+                <filter string="Gelen Faturalar" name="incoming" domain="[('direction', '=', 'IN')]"/>
+                <filter string="Giden Faturalar" name="outgoing" domain="[('direction', '=', 'OUT')]"/>
+                <separator/>
+                <filter string="Geçerli Faturalar" name="gvn_active" domain="[('gvn_active', '=', True)]"/>
+                <filter string="Geçerli Olmayan Faturalar" name="gvn_pasive" domain="[('gvn_active', '=', False)]"/>
+                <separator/>
+                <filter string="Bu Ay" name="this_month" 
+                        domain="[('issue_date', '&gt;=', (context_today() - relativedelta(day=1)).strftime('%Y-%m-%d')),
+                                ('issue_date', '&lt;', (context_today() + relativedelta(day=31)).strftime('%Y-%m-%d'))]"/>
+                <filter string="Geçen Ay" name="last_month" 
+                        domain="[('issue_date', '&gt;=', (context_today() - relativedelta(months=1, day=1)).strftime('%Y-%m-%d')),
+                                ('issue_date', '&lt;', (context_today() - relativedelta(day=1)).strftime('%Y-%m-%d'))]"/>
+                <group expand="0" string="Grupla">
+                    <filter string="Yön" name="group_direction" context="{'group_by': 'direction'}"/>
+                    <filter string="Durum Detayı" name="group_status" context="{'group_by': 'status_detail'}"/>
+                    <filter string="Fatura Tarihi" name="group_issue_date" context="{'group_by': 'issue_date:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- E-Invoice Action -->
+    <record id="action_e_invoice" model="ir.actions.act_window">
+        <field name="name">E-Faturalar</field>
+        <field name="res_model">e.invoice</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_gvn_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Henüz e-fatura kaydı bulunmuyor!
+            </p>
+            <p>
+                E-fatura kayıtları SOAP servisi üzerinden otomatik olarak senkronize edilir.
+                Senkronizasyon için "Senkronizasyon" menüsünü kullanabilirsiniz.
+            </p>
+        </field>
+    </record>
+
+    <!-- Sync Wizard Views -->
+    <record id="view_e_invoice_sync_wizard_form" model="ir.ui.view">
+        <field name="name">e.invoice.sync.wizard.form</field>
+        <field name="model">e.invoice.sync.wizard</field>
+        <field name="arch" type="xml">
+            <form string="E-Fatura Senkronizasyonu">
+                <group>
+                    <group>
+                        <field name="start_date"/>
+                        <field name="end_date"/>
+                    </group>
+                    <group>
+                        <field name="direction"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_sync" string="Senkronize Et" type="object" class="btn-primary"/>
+                    <button string="İptal" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_e_invoice_sync_wizard" model="ir.actions.act_window">
+        <field name="name">E-Fatura Senkronizasyonu</field>
+        <field name="res_model">e.invoice.sync.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

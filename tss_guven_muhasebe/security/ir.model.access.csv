@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_e_invoice_user,e.invoice.user,model_e_invoice,base.group_user,1,1,1,0
+access_e_invoice_manager,e.invoice.manager,model_e_invoice,account.group_account_manager,1,1,1,1
+access_e_invoice_sync_wizard_user,e.invoice.sync.wizard.user,model_e_invoice_sync_wizard,base.group_user,1,1,1,1
+access_e_invoice_report_user,e.invoice.report.user,model_e_invoice_report,base.group_user,1,0,0,0
+access_e_invoice_report_manager,e.invoice.report.manager,model_e_invoice_report,account.group_account_manager,1,0,0,0
+access_logo_sync_wizard_user,logo.sync.wizard.user,model_logo_sync_wizard,base.group_user,1,1,1,0
+access_logo_sync_wizard_manager,logo.sync.wizard.manager,model_logo_sync_wizard,base.group_system,1,1,1,1
+access_logo_kdv2_report,logo.kdv2.report,model_logo_kdv2_report,base.group_user,1,1,1,1
+access_logo_kdv2_wizard,logo.kdv2.wizard,model_logo_kdv2_wizard,base.group_user,1,1,1,1

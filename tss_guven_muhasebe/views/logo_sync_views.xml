@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Logo Sync Wizard Form View -->
+    <record id="view_logo_sync_wizard_form" model="ir.ui.view">
+        <field name="name">logo.sync.wizard.form</field>
+        <field name="model">logo.sync.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Logo MSSQL Senkronizasyonu">
+                <div class="alert alert-info" role="alert" style="margin-bottom: 16px;">
+                    <strong>Logo Senkronizasyonu:</strong> Bu araç e-fatura kayıtlarınızı Logo MSSQL veritabanıyla karşılaştırır ve 
+                    gerekli alanlarını günceller.
+                    <br/><br/>
+                    <strong>Not:</strong> MSSQL bağlantı ayarları modül yapılandırmasından alınır. 
+                    Ayarları değiştirmek için E-Fatura → Yapılandırma menüsünü kullanın.
+                </div>
+                
+                <group>
+                    <group string="Senkronizasyon Ayarları">
+                        <field name="sync_mode"/>
+                        <field name="direction_filter"/>
+                        <field name="test_mode"/>
+                    </group>
+                    
+                    <group string="Tarih Filtresi" invisible="sync_mode == 'selected'">
+                        <field name="date_filter"/>
+                        <div class="row" invisible="not date_filter">
+                            <div class="col-6">
+                                <field name="date_from" required="date_filter"/>
+                            </div>
+                            <div class="col-6">
+                                <field name="date_to" required="date_filter"/>
+                            </div>
+                        </div>
+                    </group>
+                </group>
+                
+                <!-- Sonuç Gösterimi -->
+                <group string="Sonuç" invisible="not result_message">
+                    <field name="result_message" widget="text" readonly="1" 
+                           style="font-family: monospace; white-space: pre-wrap;"/>
+                </group>
+                
+                <footer>
+                    <button name="action_test_connection" string="🔗 Bağlantıyı Test Et" 
+                            type="object" class="btn-secondary"/>
+                    <button name="action_sync_logo" string="🔄 Senkronize Et" 
+                            type="object" class="btn-primary"
+                            data-hotkey="shift+enter"
+                            confirm="Bu işlem e-fatura kayıtlarınızı günceller. Devam etmek istediğinizden emin misiniz?"/>
+                    <button string="İptal" class="btn-secondary" special="cancel" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Logo Sync Wizard Action -->
+    <record id="action_logo_sync_wizard" model="ir.actions.act_window">
+        <field name="name">Logo Senkronizasyonu</field>
+        <field name="res_model">logo.sync.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- E-Invoice Form View'a Buton Ekleme -->
+    <record id="view_e_invoice_form_logo_sync" model="ir.ui.view">
+        <field name="name">e.invoice.form.logo.sync</field>
+        <field name="model">e.invoice</field>
+        <field name="inherit_id" ref="view_e_invoice_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="before">
+                <header>
+                    <button name="action_sync_single_with_logo" string="Logo ile Senkronize Et" 
+                            type="object" class="btn-secondary"/>
+                </header>
+            </xpath>
+            
+            <!-- Logo bilgilerini forma ekle -->
+            <xpath expr="//group[@name='other_info']" position="after">
+                <group string="Logo Entegrasyonu" name="logo_info">
+                    <field name="exists_in_logo" widget="boolean_button" readonly="1"/>
+                    <field name="logo_record_id" readonly="1"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- E-Invoice List View'a Action Ekleme -->
+    <record id="view_e_invoice_list_logo_sync" model="ir.ui.view">
+        <field name="name">e.invoice.list.logo.sync</field>
+        <field name="model">e.invoice</field>
+        <field name="inherit_id" ref="view_e_invoice_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='gvn_active']" position="after">
+                <field name="exists_in_logo" widget="boolean_toggle" readonly="1"/>
+                <!-- <field name="logo_record_id" readonly="1"/> -->
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Server Action for Multi-Record Sync (Odoo 18 Compatible) -->
+    <record id="server_action_logo_sync_multi" model="ir.actions.server">
+        <field name="name">Logo ile Senkronize Et</field>
+        <field name="model_id" ref="model_e_invoice"/>
+        <field name="binding_model_id" ref="model_e_invoice"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+if records:
+    action = records[0].action_open_logo_sync_wizard()
+    action['context'].update({
+        'active_ids': records.ids,
+        'default_sync_mode': 'selected'
+    })
+        </field>
+    </record>
+
+    <!-- Configuration View with Logo MSSQL Settings -->
+    <record id="view_e_invoice_config_form" model="ir.ui.view">
+        <field name="name">res.config.settings.e.invoice</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <div class="app_settings_block" data-string="E-Fatura" string="E-Fatura" data-key="efatura">
+                    <h2>E-Fatura Entegrasyonu</h2>
+                    <div class="row mt16 o_settings_container">
+                        <!-- E-Fatura SOAP Ayarları -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="efatura_auto_sync"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="efatura_auto_sync" string="E-Fatura Otomatik Senkronizasyon"/>
+                                <div class="text-muted">
+                                    E-fatura verilerini otomatik olarak senkronize et
+                                </div>
+                                <div class="content-group" invisible="not efatura_auto_sync">
+                                    <div class="mt16">
+                                        <field name="efatura_sync_interval" class="o_light_label"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="efatura_username" string="E-Fatura SOAP Servisi"/>
+                                <div class="text-muted">
+                                    E-fatura SOAP servisi bağlantı bilgileri
+                                </div>
+                                <div class="content-group">
+                                    <div class="mt16">
+                                        <field name="efatura_username" placeholder="Kullanıcı adı"/>
+                                    </div>
+                                    <div class="mt8">
+                                        <field name="efatura_password" placeholder="Şifre" password="True"/>
+                                    </div>
+                                    <div class="mt8">
+                                        <button name="action_test_efatura_connection" type="object" 
+                                                string="E-Fatura Bağlantısını Test Et" class="btn-secondary"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Logo MSSQL Ayarları -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="logo_auto_sync"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="logo_auto_sync" string="Logo Otomatik Senkronizasyon"/>
+                                <div class="text-muted">
+                                    E-fatura senkronizasyonu sonrası otomatik Logo senkronizasyonu
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="logo_mssql_server" string="Logo MSSQL Bağlantısı"/>
+                                <div class="text-muted">
+                                    Logo veritabanı bağlantı bilgileri
+                                </div>
+                                <div class="content-group">
+                                    <div class="row">
+                                        <div class="col-8">
+                                            <field name="logo_mssql_server" placeholder="Server adı veya IP"/>
+                                        </div>
+                                        <div class="col-4">
+                                            <field name="logo_mssql_port" placeholder="Port"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt8">
+                                        <field name="logo_mssql_database" placeholder="Veritabanı adı"/>
+                                    </div>
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <field name="logo_mssql_username" placeholder="Kullanıcı adı"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <field name="logo_mssql_password" placeholder="Şifre" password="True"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt8">
+                                        <field name="logo_invoice_table" placeholder="Fatura tablosu adı"/>
+                                        <div class="text-muted mt4">
+                                            Örnek: LG_600_01_INVOICE, LG_001_01_INVOICE
+                                        </div>
+                                    </div>
+                                    <div class="mt8">
+                                        <button name="action_test_logo_connection" type="object" 
+                                                string="Logo Bağlantısını Test Et" class="btn-secondary"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </xpath>
+        </field>
+    </record>
+    
+    <!-- Configuration Action -->
+    <record id="action_e_invoice_config" model="ir.actions.act_window">
+        <field name="name">E-Fatura Ayarları</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module': 'tss_guven_muhasebe'}</field>
+    </record>
+
+
+</odoo>

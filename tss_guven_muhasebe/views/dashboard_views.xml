@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Pivot View -->
+    <record id="view_e_invoice_pivot" model="ir.ui.view">
+        <field name="name">e.invoice.pivot</field>
+        <field name="model">e.invoice</field>
+        <field name="arch" type="xml">
+            <pivot string="E-Fatura Analizi">
+                <field name="issue_date" type="row" interval="month"/>
+                <field name="direction" type="col"/>
+                <field name="payable_amount" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Graph View -->
+    <record id="view_e_invoice_graph" model="ir.ui.view">
+        <field name="name">e.invoice.graph</field>
+        <field name="model">e.invoice</field>
+        <field name="arch" type="xml">
+            <graph string="E-Fatura Grafikleri" type="line">
+                <field name="issue_date" interval="month"/>
+                <field name="payable_amount" type="measure"/>
+                <field name="direction" type="col"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Report View -->
+    <record id="view_e_invoice_report_list" model="ir.ui.view">
+        <field name="name">e.invoice.report.list</field>
+        <field name="model">e.invoice.report</field>
+        <field name="arch" type="xml">
+            <list string="E-Fatura Raporu">
+                <field name="date"/>
+                <field name="direction"/>
+                <field name="sender"/>
+                <field name="receiver"/>
+                <field name="invoice_count" sum="Toplam"/>
+                <field name="total_amount" sum="Toplam Tutar"/>
+                <field name="avg_amount" avg="Ortalama"/>
+                <field name="status"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_e_invoice_report_graph" model="ir.ui.view">
+        <field name="name">e.invoice.report.graph</field>
+        <field name="model">e.invoice.report</field>
+        <field name="arch" type="xml">
+            <graph string="Aylık Fatura Analizi" type="bar">
+                <field name="month"/>
+                <field name="total_amount" type="measure"/>
+                <field name="direction" type="col"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Actions -->
+    <record id="action_e_invoice_analytics" model="ir.actions.act_window">
+        <field name="name">E-Fatura Analitikleri</field>
+        <field name="res_model">e.invoice</field>
+        <field name="view_mode">graph,pivot,list,form</field>
+        <field name="context">{'search_default_gvn_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                E-Fatura verilerinizi analiz edin!
+            </p>
+            <p>
+                Grafik ve pivot görünümlerini kullanarak fatura verilerinizi analiz edebilirsiniz.
+            </p>
+        </field>
+    </record>
+
+    <!-- Logo'da Bulunmayan Faturalar için özel list view -->
+    <record id="view_e_invoice_not_in_logo_list" model="ir.ui.view">
+        <field name="name">e.invoice.not.in.logo.list</field>
+        <field name="model">e.invoice</field>
+        <field name="arch" type="xml">
+            <list string="Logo'da Bulunmayan Faturalar" default_order="direction, issue_date desc">
+                <field name="invoice_id" string="Fatura No"/>
+                <field name="direction" string="Yön"/>
+                <field name="issue_date" string="Tarih"/>
+                <field name="supplier" string="Tedarikçi"/>
+                <field name="customer" string="Müşteri"/>
+                <field name="tax_exclusive_total_amount" string="Vergisiz Tutar" sum="Toplam"/>
+                <field name="tax_inclusive_total_amount" string="Vergi Dahil Tutar" sum="Toplam"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_e_invoice_report_not_in_logo" model="ir.actions.act_window">
+        <field name="name">Logo'da Bulunmayan Faturalar</field>
+        <field name="res_model">e.invoice</field>
+        <field name="view_mode">list,pivot,graph</field>
+        <field name="view_id" ref="view_e_invoice_not_in_logo_list"/>
+        <field name="domain">[('exists_in_logo', '=', False), ('gvn_active', '=', True)]</field>
+        <field name="context">{'search_default_direction': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Logo'da bulunmayan e-faturalar
+            </p>
+            <p>
+                Bu listede Logo veritabanında karşılığı bulunmayan e-faturalar gösterilmektedir.
+            </p>
+        </field>
+    </record>
+</odoo>
