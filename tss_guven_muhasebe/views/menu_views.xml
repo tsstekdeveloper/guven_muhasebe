@@ -34,6 +34,12 @@
               parent="menu_e_invoice_reports"
               action="action_logo_kdv2_wizard"
               sequence="20"/>
+    
+    <menuitem id="menu_logo_muhtasar_report" 
+              name="Muhtasar"
+              parent="menu_e_invoice_reports"
+              action="action_logo_muhtasar_wizard"
+              sequence="30"/>
 
     <!-- Analytics Menu -->
     <menuitem id="menu_invoice_analytics" 

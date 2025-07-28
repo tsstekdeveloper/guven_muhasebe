@@ -1462,7 +1462,7 @@ class LogoKdv2Wizard(models.TransientModel):
         ('12', 'Aralık'),
     ], string='Ay', required=True, default=str(fields.Date.today().month))
     
-    year = fields.Integer(string='Yıl', required=True, default=fields.Date.today().year, format='0000')
+    year = fields.Integer(string='Yıl', required=True, default=fields.Date.today().year)
     
     def _get_mssql_connection(self):
         """MSSQL bağlantısı oluştur"""
@@ -1655,4 +1655,403 @@ AND AA.MODULENR=2
                 
         except Exception as e:
             _logger.error("KDV-2 rapor hatası: %s", str(e))
+            raise UserError(_("Rapor oluşturma hatası: %s") % str(e))
+
+
+class LogoMuhtasarReport(models.TransientModel):
+    _name = 'logo.muhtasar.report'
+    _description = 'Logo Muhtasar Raporu'
+    
+    # Rapor sonuçları için alanlar
+    odenecek_gelir_vergileri = fields.Char(string='Ödenecek Gelir Vergileri', readonly=True)
+    vergi_turu = fields.Char(string='Vergi Türü', readonly=True)
+    tarih = fields.Date(string='Tarih', readonly=True)
+    ay = fields.Integer(string='Ay', readonly=True)
+    yil = fields.Integer(string='Yıl', readonly=True)
+    fis_no = fields.Char(string='Fiş No', readonly=True)
+    islem = fields.Char(string='İşlem', readonly=True)
+    is_yeri = fields.Char(string='İş Yeri', readonly=True)
+    bolum = fields.Char(string='Bölüm', readonly=True)
+    proje = fields.Char(string='Proje', readonly=True)
+    kebir_hesabi_kodu = fields.Char(string='Kebir Hesabı Kodu', readonly=True)
+    kebir_hesabi_adi = fields.Char(string='Kebir Hesabı Adı', readonly=True)
+    hesap_kodu = fields.Char(string='Hesap Kodu', readonly=True)
+    hesap_adi = fields.Char(string='Hesap Adı', readonly=True)
+    masraf_merkezi = fields.Char(string='Masraf Merkezi', readonly=True)
+    kaynak_modul = fields.Char(string='Kaynak Modül', readonly=True)
+    tutar = fields.Float(string='Tutar', digits=(16, 2), readonly=True)
+    tutar_yerel = fields.Float(string='Tutar (Yerel)', digits=(16, 2), readonly=True)
+    aciklama = fields.Char(string='Açıklama', readonly=True)
+    fis_aciklama = fields.Char(string='Fiş Açıklama', readonly=True)
+    hareket_yonu = fields.Char(string='Hareket Yönü', readonly=True)
+    iptal = fields.Char(string='İptal', readonly=True)
+    belge_turu = fields.Char(string='Belge Türü', readonly=True)
+    cari = fields.Char(string='Cari', readonly=True)
+    cari_vergi_no = fields.Char(string='Cari Vergi No', readonly=True)
+    cari_unvan1 = fields.Char(string='Cari Ünvan 1', readonly=True)
+    cari_unvan2 = fields.Char(string='Cari Ünvan 2', readonly=True)
+    adi = fields.Char(string='Adı', readonly=True)
+    soyadi = fields.Char(string='Soyadı', readonly=True)
+    fatura_belge_no = fields.Char(string='Fatura Belge No', readonly=True)
+    fatura_no = fields.Char(string='Fatura No', readonly=True)
+    adres1 = fields.Char(string='Adres', readonly=True)
+    ulke = fields.Char(string='Ülke', readonly=True)
+
+
+class LogoMuhtasarWizard(models.TransientModel):
+    _name = 'logo.muhtasar.wizard'
+    _description = 'Logo Muhtasar Rapor Sihirbazı'
+    
+    month = fields.Selection([
+        ('1', 'Ocak'),
+        ('2', 'Şubat'),
+        ('3', 'Mart'),
+        ('4', 'Nisan'),
+        ('5', 'Mayıs'),
+        ('6', 'Haziran'),
+        ('7', 'Temmuz'),
+        ('8', 'Ağustos'),
+        ('9', 'Eylül'),
+        ('10', 'Ekim'),
+        ('11', 'Kasım'),
+        ('12', 'Aralık'),
+    ], string='Ay', required=True, default=str(fields.Date.today().month))
+    
+    year = fields.Integer(string='Yıl', required=True, default=fields.Date.today().year)
+    
+    def _get_mssql_connection(self):
+        """MSSQL bağlantısı oluştur"""
+        if not pymssql:
+            raise UserError(_("pymssql kütüphanesi yüklü değil. 'pip install pymssql' komutunu çalıştırın."))
+        
+        config_param = self.env['ir.config_parameter'].sudo()
+        server = config_param.get_param('logo.mssql_server')
+        port = int(config_param.get_param('logo.mssql_port', '1433'))
+        database = config_param.get_param('logo.mssql_database')
+        username = config_param.get_param('logo.mssql_username')
+        password = config_param.get_param('logo.mssql_password')
+        
+        if not all([server, database, username, password]):
+            raise UserError(_("Logo MSSQL bağlantı parametreleri eksik. Lütfen E-Fatura → Yapılandırma menüsünden ayarları tamamlayın."))
+        
+        try:
+            connection = pymssql.connect(
+                server=server,
+                port=port,
+                user=username,
+                password=password,
+                database=database,
+                timeout=30,
+                login_timeout=30,
+                charset='UTF-8'
+            )
+            return connection
+        except Exception as e:
+            raise UserError(_("MSSQL bağlantı hatası: %s") % str(e))
+    
+    def action_generate_report(self):
+        """Muhtasar raporunu oluştur"""
+        try:
+            # Mevcut kayıtları temizle
+            self.env['logo.muhtasar.report'].search([]).unlink()
+            
+            # MSSQL bağlantısı
+            conn = self._get_mssql_connection()
+            cursor = conn.cursor(as_dict=True)
+            
+            # SQL sorgusunu çalıştır
+            query = """
+SELECT  
+CASE 
+  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.002' THEN 'S.M MAKBUZU' 
+  WHEN F.CODE = '360.10.01.003' THEN 'KİRA GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.004' THEN 'GİDER PUSULASI GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.005' THEN 'YURT DIŞI HİZMERT ALIMI GELİR VERGİSİ' 
+  WHEN F.CODE LIKE '7%' THEN 'VERGİ' 
+END as odenecekGelirVergileri,
+CASE 
+  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.002' THEN '022' 
+  WHEN F.CODE = '360.10.01.003' THEN '041' 
+  WHEN F.CODE = '360.10.01.004' THEN '156' 
+  WHEN F.CODE = '360.10.01.005' THEN '279' 
+  WHEN F.CODE LIKE '7%' THEN '' 
+END as vergiTuru,
+A.DATE_ as tarih,
+MONTH(A.DATE_) as ay,
+YEAR(A.DATE_) as yil,
+AA.FICHENO as fisNo,
+CASE 
+  WHEN A.TRCODE=1 THEN '1 Açılış'
+  WHEN A.TRCODE=2 THEN '2 Tahsil'
+  WHEN A.TRCODE=3 THEN '3 Tediye'
+  WHEN A.TRCODE=4 THEN '4 Mahsup'
+  WHEN A.TRCODE=5 THEN '5 Özel'
+  WHEN A.TRCODE=6 THEN '6 Kur Farkı'
+  WHEN A.TRCODE=7 THEN '7 Kapanış'
+ELSE '' 
+END as islem,
+CAST(C.NR AS CHAR(3))+' '+C.NAME as isYeri,
+CAST(D.NR AS CHAR(3))+' '+D.NAME as bolum,
+E.CODE+' '+E.NAME as proje,
+F1.CODE as kebirHesabiKodu,
+F1.DEFINITION_ as kebirHesabiAdi,
+F.CODE as hesapKodu,
+F.DEFINITION_ as hesapAdi,
+G.CODE+' '+G.DEFINITION_ as masrafMerkezi,
+CASE 
+  WHEN AA.MODULENR=1 THEN '1 Malzeme'
+  WHEN AA.MODULENR=2 THEN '2 Satınalma'
+  WHEN AA.MODULENR=3 THEN '3 Satış'
+  WHEN AA.MODULENR=4 THEN '4 Cari Hesap'
+  WHEN AA.MODULENR=5 THEN '5 Çek Senet'
+  WHEN AA.MODULENR=6 THEN '6 Banka'
+  WHEN AA.MODULENR=7 THEN '7 Kasa'
+ELSE '' 
+END as kaynakModul,
+-CASE 
+  WHEN A.TRCURR=0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN
+  WHEN A.TRCURR<>0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN A.TRNET-A.TRNET*2*A.SIGN
+  WHEN A.TRCURR=0 AND A1.DISTRATE<>100 THEN A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN
+  WHEN A.TRCURR<>0 AND A1.DISTRATE<>100 THEN A1.TRNET-A1.TRNET*2*A.SIGN
+ELSE 0 
+END as tutar,
+CASE 
+  WHEN A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN ELSE A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN 
+END as tutarYerel,
+A.LINEEXP as aciklama,
+AA.GENEXP1 as fisAciklama,
+CASE
+  WHEN A.SIGN=0 THEN '0 Borç' 
+  WHEN A.SIGN=1 THEN '1 Alacak' 
+ELSE '' 
+END as hareketYonu,
+CASE 
+  WHEN A.CANCELLED=0 THEN 'Hayır' 
+ELSE 'Evet' 
+END as iptal,
+CASE AA.DOCTYPE 
+  WHEN 0 THEN 'Normal' 
+  WHEN 1 THEN 'Cost Of Sales'
+  WHEN 2 THEN 'Differences Of Cost Of Sales' 
+ELSE '' 
+END as belgeTuru,
+A.CLDEF as cari,
+A.TAXNR as cariVergiNo,
+CL.DEFINITION_ as cariUnvan1, 
+CL.DEFINITION2 as cariUnvan2,
+CL.NAME as adi, 
+CL.SURNAME as soyadi,
+N2.DOCODE as faturaBelgeNo, 
+N2.FICHENO as faturaNo,
+CL.ADDR1 as adres1,
+CL.COUNTRY as ulke
+FROM  LG_600_01_EMFLINE A WITH(NOLOCK)
+  LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=A.ACCFICHEREF
+  LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=A.LOGICALREF
+  LEFT JOIN L_CAPIDIV C WITH(NOLOCK) ON C.NR=A.BRANCH AND C.FIRMNR=600
+  LEFT JOIN L_CAPIDEPT D WITH(NOLOCK) ON D.NR=A.DEPARTMENT AND D.FIRMNR=600
+  LEFT JOIN LG_600_PROJECT E WITH(NOLOCK) ON E.LOGICALREF=A1.PROJECTREF
+  LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=A.ACCOUNTREF
+  LEFT JOIN LG_600_EMUHACC F1 WITH(NOLOCK) ON F1.CODE=left(F.CODE,3)
+  LEFT JOIN LG_600_EMCENTER G WITH(NOLOCK) ON G.LOGICALREF=A.CENTERREF
+  LEFT JOIN L_CURRENCYLIST H WITH(NOLOCK) ON H.CURTYPE=A.TRCURR AND H.FIRMNR=600
+  LEFT JOIN LG_EXCHANGE_600 I WITH(NOLOCK) ON I.EDATE=A.DATE_ AND I.CRTYPE=20
+  LEFT JOIN LG_600_01_INVOICE N1 WITH(NOLOCK) ON N1.LOGICALREF = A.SOURCEFREF
+  LEFT JOIN LG_600_01_INVOICE N2 WITH(NOLOCK) ON N2.ACCFICHEREF = AA.LOGICALREF
+  LEFT JOIN LG_600_CLCARD CL WITH(NOLOCK)  ON CL.LOGICALREF = N2.CLIENTREF
+  INNER JOIN (
+            SELECT 
+                EML.ACCFICHEREF
+            FROM  LG_600_01_EMFLINE EML WITH(NOLOCK)
+              LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=EML.ACCFICHEREF
+              LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=EML.LOGICALREF
+              LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=EML.ACCOUNTREF
+            WHERE AA.CANCELLED = 0 
+              AND (F.CODE LIKE '360.10.01%')
+              AND MONTH(EML.DATE_)= %s
+              AND YEAR(EML.DATE_)= %s
+              AND AA.MODULENR=2) SEML ON  SEML.ACCFICHEREF = A.ACCFICHEREF
+WHERE AA.CANCELLED = 0 
+  AND (F.CODE LIKE '7%' OR F.CODE LIKE '360.10.01%')
+  AND AA.MODULENR=2
+  AND MONTH(A.DATE_)= %s
+  AND YEAR(A.DATE_)= %s
+UNION ALL
+SELECT  
+CASE 
+  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.002' THEN 'S.M MAKBUZU' 
+  WHEN F.CODE = '360.10.01.003' THEN 'KİRA GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.004' THEN 'GİDER PUSULASI GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.005' THEN 'YURT DIŞI HİZMERT ALIMI GELİR VERGİSİ' 
+  WHEN F.CODE LIKE '7%' THEN 'VERGİ' 
+END as odenecekGelirVergileri,
+CASE 
+  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
+  WHEN F.CODE = '360.10.01.002' THEN '022' 
+  WHEN F.CODE = '360.10.01.003' THEN '041' 
+  WHEN F.CODE = '360.10.01.004' THEN '156' 
+  WHEN F.CODE = '360.10.01.005' THEN '279' 
+  WHEN F.CODE LIKE '7%' THEN '' 
+END as vergiTuru,
+A.DATE_ as tarih,
+MONTH(A.DATE_) as ay,
+YEAR(A.DATE_) as yil,
+AA.FICHENO as fisNo,
+CASE 
+  WHEN A.TRCODE=1 THEN '1 Açılış'
+  WHEN A.TRCODE=2 THEN '2 Tahsil'
+  WHEN A.TRCODE=3 THEN '3 Tediye'
+  WHEN A.TRCODE=4 THEN '4 Mahsup'
+  WHEN A.TRCODE=5 THEN '5 Özel'
+  WHEN A.TRCODE=6 THEN '6 Kur Farkı'
+  WHEN A.TRCODE=7 THEN '7 Kapanış'
+ELSE '' 
+END as islem,
+CAST(C.NR AS CHAR(3))+' '+C.NAME as isYeri,
+CAST(D.NR AS CHAR(3))+' '+D.NAME as bolum,
+E.CODE+' '+E.NAME as proje,
+F1.CODE as kebirHesabiKodu,
+F1.DEFINITION_ as kebirHesabiAdi,
+F.CODE as hesapKodu,
+F.DEFINITION_ as hesapAdi,
+G.CODE+' '+G.DEFINITION_ as masrafMerkezi,
+CASE 
+  WHEN AA.MODULENR=1 THEN '1 Malzeme'
+  WHEN AA.MODULENR=2 THEN '2 Satınalma'
+  WHEN AA.MODULENR=3 THEN '3 Satış'
+  WHEN AA.MODULENR=4 THEN '4 Cari Hesap'
+  WHEN AA.MODULENR=5 THEN '5 Çek Senet'
+  WHEN AA.MODULENR=6 THEN '6 Banka'
+  WHEN AA.MODULENR=7 THEN '7 Kasa'
+ELSE '' 
+END as kaynakModul,
+-CASE 
+  WHEN A.TRCURR=0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN
+  WHEN A.TRCURR<>0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN A.TRNET-A.TRNET*2*A.SIGN
+  WHEN A.TRCURR=0 AND A1.DISTRATE<>100 THEN A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN
+  WHEN A.TRCURR<>0 AND A1.DISTRATE<>100 THEN A1.TRNET-A1.TRNET*2*A.SIGN
+ELSE 0 
+END as tutar,
+CASE 
+  WHEN A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN 
+ELSE A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN 
+END as tutarYerel,
+A.LINEEXP as aciklama,
+AA.GENEXP1 as fisAciklama,
+CASE 
+  WHEN A.SIGN=0 THEN '0 Borç' 
+  WHEN A.SIGN=1 THEN '1 Alacak' 
+ELSE '' 
+END as hareketYonu,
+CASE 
+  WHEN A.CANCELLED=0 THEN 'Hayır' 
+ELSE 'Evet' 
+END as iptal,
+CASE AA.DOCTYPE 
+  WHEN 0 THEN 'Normal' 
+  WHEN 1 THEN 'Cost Of Sales' 
+  WHEN 2 THEN 'Differences Of Cost Of Sales' 
+ELSE '' 
+END as belgeTuru,
+A.CLDEF as cari, 
+A.TAXNR as cariVergiNo,
+CL.DEFINITION_ as cariUnvan1, 
+CL.DEFINITION2 as cariUnvan2,
+CL.NAME as adi, 
+CL.SURNAME as soyadi,
+N2.DOCODE as faturaBelgeNo, 
+N2.FICHENO as faturaNo,
+CL.ADDR1 as adres1,
+CL.COUNTRY as ulke
+FROM  LG_600_01_EMFLINE A WITH(NOLOCK)
+  LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=A.ACCFICHEREF
+  LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=A.LOGICALREF
+  LEFT JOIN L_CAPIDIV C WITH(NOLOCK) ON C.NR=A.BRANCH AND C.FIRMNR=600
+  LEFT JOIN L_CAPIDEPT D WITH(NOLOCK) ON D.NR=A.DEPARTMENT AND D.FIRMNR=600
+  LEFT JOIN LG_600_PROJECT E WITH(NOLOCK) ON E.LOGICALREF=A1.PROJECTREF
+  LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=A.ACCOUNTREF
+  LEFT JOIN LG_600_EMUHACC F1 WITH(NOLOCK) ON F1.CODE=left(F.CODE,3)
+  LEFT JOIN LG_600_EMCENTER G WITH(NOLOCK) ON G.LOGICALREF=A.CENTERREF
+  LEFT JOIN L_CURRENCYLIST H WITH(NOLOCK) ON H.CURTYPE=A.TRCURR AND H.FIRMNR=600
+  LEFT JOIN LG_EXCHANGE_600 I WITH(NOLOCK) ON I.EDATE=A.DATE_ AND I.CRTYPE=20
+  LEFT JOIN LG_600_01_INVOICE N1 WITH(NOLOCK) ON N1.LOGICALREF = A.SOURCEFREF
+  LEFT JOIN LG_600_01_INVOICE N2 WITH(NOLOCK) ON N2.ACCFICHEREF = AA.LOGICALREF
+  INNER JOIN LG_600_CLCARD CL WITH(NOLOCK)  ON CL.LOGICALREF = N2.CLIENTREF
+WHERE AA.CANCELLED = 0 
+  AND (F.CODE LIKE '360.10.01.003%' OR F.CODE LIKE '740.YÜ[PM]%' OR F.CODE LIKE '770.10.08.001')
+  AND AA.MODULENR=6
+  AND MONTH(A.DATE_)= %s
+  AND YEAR(A.DATE_)= %s
+"""
+            
+            cursor.execute(query, (int(self.month), self.year, int(self.month), self.year, int(self.month), self.year))
+            
+            # Sonuçları Odoo'ya kaydet
+            records = []
+            for row in cursor:
+                vals = {
+                    'odenecek_gelir_vergileri': row.get('odenecekGelirVergileri'),
+                    'vergi_turu': row.get('vergiTuru'),
+                    'tarih': row.get('tarih'),
+                    'ay': row.get('ay'),
+                    'yil': row.get('yil'),
+                    'fis_no': row.get('fisNo'),
+                    'islem': row.get('islem'),
+                    'is_yeri': row.get('isYeri'),
+                    'bolum': row.get('bolum'),
+                    'proje': row.get('proje'),
+                    'kebir_hesabi_kodu': row.get('kebirHesabiKodu'),
+                    'kebir_hesabi_adi': row.get('kebirHesabiAdi'),
+                    'hesap_kodu': row.get('hesapKodu'),
+                    'hesap_adi': row.get('hesapAdi'),
+                    'masraf_merkezi': row.get('masrafMerkezi'),
+                    'kaynak_modul': row.get('kaynakModul'),
+                    'tutar': row.get('tutar') or 0.0,
+                    'tutar_yerel': row.get('tutarYerel') or 0.0,
+                    'aciklama': row.get('aciklama'),
+                    'fis_aciklama': row.get('fisAciklama'),
+                    'hareket_yonu': row.get('hareketYonu'),
+                    'iptal': row.get('iptal'),
+                    'belge_turu': row.get('belgeTuru'),
+                    'cari': row.get('cari'),
+                    'cari_vergi_no': row.get('cariVergiNo'),
+                    'cari_unvan1': row.get('cariUnvan1'),
+                    'cari_unvan2': row.get('cariUnvan2'),
+                    'adi': row.get('adi'),
+                    'soyadi': row.get('soyadi'),
+                    'fatura_belge_no': row.get('faturaBelgeNo'),
+                    'fatura_no': row.get('faturaNo'),
+                    'adres1': row.get('adres1'),
+                    'ulke': row.get('ulke'),
+                }
+                records.append(self.env['logo.muhtasar.report'].create(vals))
+            
+            conn.close()
+            
+            if records:
+                # Rapor görünümünü aç
+                return {
+                    'name': _('Muhtasar Listesi - %s/%s') % (self.month, self.year),
+                    'type': 'ir.actions.act_window',
+                    'res_model': 'logo.muhtasar.report',
+                    'view_mode': 'list',
+                    'domain': [],
+                }
+            else:
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': _('Bilgi'),
+                        'message': _('Seçilen dönem için kayıt bulunamadı.'),
+                        'type': 'warning',
+                        'sticky': False,
+                    }
+                }
+                
+        except Exception as e:
+            _logger.error("Muhtasar rapor hatası: %s", str(e))
             raise UserError(_("Rapor oluşturma hatası: %s") % str(e))

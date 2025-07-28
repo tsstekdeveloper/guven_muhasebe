@@ -75,6 +75,7 @@ Teknik Gereksinimler:
         'views/dashboard_views.xml',
         'views/logo_sync_views.xml',
         'views/kdv2_views.xml',
+        'views/muhtasar_views.xml',
         'views/menu_views.xml',
     ],
     'demo': [

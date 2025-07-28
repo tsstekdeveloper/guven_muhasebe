@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Muhtasar Report List View -->
+    <record id="view_logo_muhtasar_report_list" model="ir.ui.view">
+        <field name="name">logo.muhtasar.report.list</field>
+        <field name="model">logo.muhtasar.report</field>
+        <field name="arch" type="xml">
+            <list string="Muhtasar Listesi" default_order="tarih, fis_no" create="false" edit="false" delete="false">
+                <field name="tarih"/>
+                <field name="fis_no"/>
+                <field name="odenecek_gelir_vergileri"/>
+                <field name="vergi_turu"/>
+                <field name="cari"/>
+                <field name="cari_vergi_no"/>
+                <field name="cari_unvan1"/>
+                <field name="adi"/>
+                <field name="soyadi"/>
+                <field name="tutar_yerel" sum="Toplam"/>
+                <field name="hesap_kodu"/>
+                <field name="hesap_adi"/>
+                <field name="masraf_merkezi"/>
+                <field name="kaynak_modul"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Muhtasar Report Form View (Sadece okuma) -->
+    <record id="view_logo_muhtasar_report_form" model="ir.ui.view">
+        <field name="name">logo.muhtasar.report.form</field>
+        <field name="model">logo.muhtasar.report</field>
+        <field name="arch" type="xml">
+            <form string="Muhtasar Detayı" create="false" edit="false" delete="false">
+                <sheet>
+                    <group>
+                        <group string="Genel Bilgiler">
+                            <field name="tarih"/>
+                            <field name="ay"/>
+                            <field name="yil"/>
+                            <field name="fis_no"/>
+                            <field name="islem"/>
+                            <field name="hareket_yonu"/>
+                            <field name="iptal"/>
+                            <field name="belge_turu"/>
+                        </group>
+                        <group string="Vergi Bilgileri">
+                            <field name="odenecek_gelir_vergileri"/>
+                            <field name="vergi_turu"/>
+                            <field name="tutar"/>
+                            <field name="tutar_yerel"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Hesap Bilgileri">
+                            <field name="kebir_hesabi_kodu"/>
+                            <field name="kebir_hesabi_adi"/>
+                            <field name="hesap_kodu"/>
+                            <field name="hesap_adi"/>
+                            <field name="masraf_merkezi"/>
+                            <field name="kaynak_modul"/>
+                        </group>
+                        <group string="Organizasyon">
+                            <field name="is_yeri"/>
+                            <field name="bolum"/>
+                            <field name="proje"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Cari Bilgileri">
+                            <field name="cari"/>
+                            <field name="cari_vergi_no"/>
+                            <field name="cari_unvan1"/>
+                            <field name="cari_unvan2"/>
+                            <field name="adi"/>
+                            <field name="soyadi"/>
+                        </group>
+                        <group string="Fatura Bilgileri">
+                            <field name="fatura_belge_no"/>
+                            <field name="fatura_no"/>
+                            <field name="adres1"/>
+                            <field name="ulke"/>
+                        </group>
+                    </group>
+                    <group string="Açıklamalar">
+                        <field name="aciklama"/>
+                        <field name="fis_aciklama"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Muhtasar Report Search View -->
+    <record id="view_logo_muhtasar_report_search" model="ir.ui.view">
+        <field name="name">logo.muhtasar.report.search</field>
+        <field name="model">logo.muhtasar.report</field>
+        <field name="arch" type="xml">
+            <search string="Muhtasar Ara">
+                <field name="fis_no"/>
+                <field name="cari"/>
+                <field name="cari_vergi_no"/>
+                <field name="cari_unvan1"/>
+                <field name="hesap_kodu"/>
+                <field name="hesap_adi"/>
+                <separator/>
+                <filter string="Ücret Gelir Vergisi" name="ucret_gelir" domain="[('odenecek_gelir_vergileri', '=', 'ÜCRET GELİR VERGİSİ')]"/>
+                <filter string="Kira Gelir Vergisi" name="kira_gelir" domain="[('odenecek_gelir_vergileri', '=', 'KİRA GELİR VERGİSİ')]"/>
+                <filter string="S.M Makbuzu" name="sm_makbuzu" domain="[('vergi_turu', '=', '022')]"/>
+                <separator/>
+                <filter string="İptal Edilmemiş" name="not_cancelled" domain="[('iptal', '=', 'Hayır')]"/>
+                <filter string="İptal Edilmiş" name="cancelled" domain="[('iptal', '=', 'Evet')]"/>
+                <group expand="0" string="Grupla">
+                    <filter string="Vergi Türü" name="group_vergi_turu" context="{'group_by': 'vergi_turu'}"/>
+                    <filter string="Hesap Kodu" name="group_hesap_kodu" context="{'group_by': 'hesap_kodu'}"/>
+                    <filter string="Cari" name="group_cari" context="{'group_by': 'cari'}"/>
+                    <filter string="Kaynak Modül" name="group_kaynak_modul" context="{'group_by': 'kaynak_modul'}"/>
+                    <filter string="Tarih" name="group_tarih" context="{'group_by': 'tarih:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Muhtasar Report Pivot View -->
+    <record id="view_logo_muhtasar_report_pivot" model="ir.ui.view">
+        <field name="name">logo.muhtasar.report.pivot</field>
+        <field name="model">logo.muhtasar.report</field>
+        <field name="arch" type="xml">
+            <pivot string="Muhtasar Analizi">
+                <field name="vergi_turu" type="row"/>
+                <field name="tarih" type="col" interval="month"/>
+                <field name="tutar_yerel" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Muhtasar Wizard Form View -->
+    <record id="view_logo_muhtasar_wizard_form" model="ir.ui.view">
+        <field name="name">logo.muhtasar.wizard.form</field>
+        <field name="model">logo.muhtasar.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Muhtasar Raporu Oluştur">
+                <group>
+                    <group>
+                        <field name="month"/>
+                    </group>
+                    <group>
+                        <field name="year"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_generate_report" string="Rapor Oluştur" type="object" class="btn-primary"/>
+                    <button string="İptal" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Muhtasar Report Action -->
+    <record id="action_logo_muhtasar_report" model="ir.actions.act_window">
+        <field name="name">Muhtasar Listesi</field>
+        <field name="res_model">logo.muhtasar.report</field>
+        <field name="view_mode">list,form,pivot</field>
+        <field name="search_view_id" ref="view_logo_muhtasar_report_search"/>
+        <field name="context">{'search_default_not_cancelled': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Muhtasar raporu oluşturmak için tıklayın
+            </p>
+            <p>
+                Muhtasar raporu Logo MSSQL veritabanından çekilir.
+                Ay ve yıl seçerek rapor oluşturabilirsiniz.
+            </p>
+        </field>
+    </record>
+
+    <!-- Muhtasar Wizard Action -->
+    <record id="action_logo_muhtasar_wizard" model="ir.actions.act_window">
+        <field name="name">Muhtasar Raporu</field>
+        <field name="res_model">logo.muhtasar.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="view_id" ref="view_logo_muhtasar_wizard_form"/>
+    </record>
+</odoo>
