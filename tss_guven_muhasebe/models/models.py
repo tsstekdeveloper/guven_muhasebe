@@ -552,34 +552,39 @@ class e_invoice(models.Model):
             }
 
     def _prepare_invoice_vals_from_soap(self, soap_data):
-        """SOAP verisini Odoo vals formatına dönüştür"""
+        """SOAP verisini Odoo vals formatına dönüştür (UPDATE için)"""
         vals = {}
         header = soap_data.get('HEADER', {})
-        
+
         if header:
             vals.update({
                 'sender': header.get('SENDER'),
                 'receiver': header.get('RECEIVER'),
                 'supplier': header.get('SUPPLIER'),
                 'customer': header.get('CUSTOMER'),
+                'profile_id': header.get('PROFILEID'),  # ✅ CREATE ile tutarlı
+                'invoice_type_code': header.get('INVOICE_TYPE_CODE'),  # ✅ CREATE ile tutarlı
                 'status': header.get('STATUS'),
                 'status_description': header.get('STATUS_DESCRIPTION'),
                 'status_code': header.get('STATUS_CODE'),
                 'gib_status_code': header.get('GIB_STATUS_CODE'),
                 'gib_status_description': header.get('GIB_STATUS_DESCRIPTION'),
+                'envelope_identifier': header.get('ENVELOPE_IDENTIFIER'),  # ✅ CREATE ile tutarlı
+                'from_field': header.get('FROM'),  # ✅ CREATE ile tutarlı
+                'to_field': header.get('TO'),  # ✅ CREATE ile tutarlı
             })
-            
+
             # Tarihleri güncelle
             if header.get('ISSUE_DATE'):
                 parsed_date = self._parse_date_field(header.get('ISSUE_DATE'), 'ISSUE_DATE')
                 if parsed_date:
                     vals['issue_date'] = parsed_date
-            
+
             if header.get('CDATE'):
                 parsed_date = self._parse_date_field(header.get('CDATE'), 'CDATE')
                 if parsed_date:
                     vals['create_date_ws'] = parsed_date
-            
+
             # Finansal alanları güncelle
             financial_field_mapping = {
                 'PAYABLE_AMOUNT': 'payable_amount',
@@ -588,12 +593,12 @@ class e_invoice(models.Model):
                 'ALLOWANCE_TOTAL_AMOUNT': 'allowance_total_amount',
                 'LINE_EXTENSION_AMOUNT': 'line_extension_amount'
             }
-            
+
             for soap_field, odoo_field in financial_field_mapping.items():
                 if header.get(soap_field):
                     parsed_amount = self._parse_financial_field(header.get(soap_field), soap_field)
                     vals[odoo_field] = parsed_amount
-        
+
         return vals
 
     @api.model
