@@ -6,20 +6,21 @@
         <field name="model">logo.muhtasar.report</field>
         <field name="arch" type="xml">
             <list string="Muhtasar Listesi" default_order="tarih, fis_no" create="false" edit="false" delete="false">
-                <field name="tarih"/>
-                <field name="fis_no"/>
-                <field name="odenecek_gelir_vergileri"/>
-                <field name="vergi_turu"/>
-                <field name="cari"/>
-                <field name="cari_vergi_no"/>
-                <field name="cari_unvan1"/>
-                <field name="adi"/>
-                <field name="soyadi"/>
-                <field name="tutar_yerel" sum="Toplam"/>
-                <field name="hesap_kodu"/>
-                <field name="hesap_adi"/>
-                <field name="masraf_merkezi"/>
-                <field name="kaynak_modul"/>
+                <field name="tarih" optional="show"/>
+                <field name="fis_no" optional="show"/>
+                <field name="odenecek_gelir_vergileri" optional="show"/>
+                <field name="vergi_turu" optional="show"/>
+                <field name="vergi" optional="show"/>
+                <field name="cari" optional="show"/>
+                <field name="cari_vergi_no" optional="show"/>
+                <field name="cari_unvan1" optional="show"/>
+                <field name="adi" optional="show"/>
+                <field name="soyadi" optional="show"/>
+                <field name="tutar_yerel" sum="Toplam" optional="show"/>
+                <field name="hesap_kodu" optional="show"/>
+                <field name="hesap_adi" optional="show"/>
+                <field name="masraf_merkezi" optional="show"/>
+                <field name="kaynak_modul" optional="show"/>
             </list>
         </field>
     </record>
@@ -45,6 +46,7 @@
                         <group string="Vergi Bilgileri">
                             <field name="odenecek_gelir_vergileri"/>
                             <field name="vergi_turu"/>
+                            <field name="vergi"/>
                             <field name="tutar"/>
                             <field name="tutar_yerel"/>
                         </group>

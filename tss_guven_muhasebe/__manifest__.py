@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'E-Fatura Entegrasyonu',
-    'version': '1.0.1',
+    'version': '1.0.2',
     'category': 'Accounting/Accounting',
-    'summary': 'izibiz E-Fatura sistemi entegrasyonu ve Logo MSSQL senkronizasyonu',
+    'summary': 'izibiz E-Fatura/E-Arşiv sistemi entegrasyonu ve Logo MSSQL senkronizasyonu',
     'description': """
-E-Fatura Entegrasyonu ve Logo MSSQL Senkronizasyonu
+E-Fatura/E-Arşiv Entegrasyonu ve Logo MSSQL Senkronizasyonu
 ===============================================
-Bu modül izibiz e-fatura sistemine SOAP servisi üzerinden bağlanarak
+Bu modül izibiz e-fatura ve e-arşiv sistemine SOAP servisi üzerinden bağlanarak
 fatura verilerini Odoo'ya aktarır ve Logo MSSQL veritabanıyla senkronize eder.
 
 Özellikler:
 ===========
 
-E-Fatura Entegrasyonu:
+E-Fatura ve E-Arşiv Entegrasyonu:
 - SOAP servisi entegrasyonu (izibiz)
+- E-Fatura ve E-Arşiv desteği
 - Otomatik fatura senkronizasyonu
 - Gelen/Giden fatura desteği
 - Finansal verilerin otomatik dönüştürülmesi

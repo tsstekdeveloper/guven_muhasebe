@@ -6,14 +6,15 @@
         <field name="model">e.invoice</field>
         <field name="arch" type="xml">
             <list string="E-Faturalar" default_order="issue_date, invoice_id">
-                <field name="invoice_id"/>
-                <field name="issue_date"/>
-                <field name="supplier"/>
-                <field name="customer"/>
-                <field name="payable_amount" sum="Total"/>
-                <field name="direction"/>
-                <field name="status_detail"/>
-                <field name="gvn_active"/>
+                <field name="invoice_id" optional="show"/>
+                <field name="issue_date" optional="show"/>
+                <field name="supplier" optional="show"/>
+                <field name="customer" optional="show"/>
+                <field name="payable_amount" sum="Total" optional="show"/>
+                <field name="direction" optional="show"/>
+                <field name="kaynak" optional="show"/>
+                <field name="status_detail" optional="show"/>
+                <field name="gvn_active" optional="show"/>
             </list>
         </field>
     </record>
@@ -42,10 +43,16 @@
                         <group name="main_info" string="Ana Bilgiler">
                             <field name="uuid" readonly="1"/>
                             <field name="direction"/>
+                            <field name="kaynak"/>
                             <field name="issue_date"/>
                             <field name="create_date_ws"/>
                             <field name="invoice_type_code"/>
                             <field name="profile_id"/>
+                            <!-- E-Arşiv Özel Alanları -->
+                            <field name="currency_code" readonly="1" invisible="kaynak != 'e-arsiv'"/>
+                            <field name="reported" readonly="1" invisible="kaynak != 'e-arsiv'"/>
+                            <field name="earchive_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
+                            <field name="sending_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
                         </group>
                         <group name="status_info" string="Durum Bilgileri">
                             <field name="status_detail"/>
@@ -103,21 +110,27 @@
                 <field name="receiver"/>
                 <field name="customer"/>
                 <field name="supplier"/>
+                <field name="kaynak"/>
                 <separator/>
                 <filter string="Gelen Faturalar" name="incoming" domain="[('direction', '=', 'IN')]"/>
                 <filter string="Giden Faturalar" name="outgoing" domain="[('direction', '=', 'OUT')]"/>
                 <separator/>
+                <filter string="E-Fatura" name="kaynak_efatura" domain="[('kaynak', '=', 'e-fatura')]"/>
+                <filter string="E-Arşiv" name="kaynak_earsiv" domain="[('kaynak', '=', 'e-arsiv')]"/>
+                <filter string="E-İrsaliye" name="kaynak_eirsaliye" domain="[('kaynak', '=', 'e-irsaliye')]"/>
+                <separator/>
                 <filter string="Geçerli Faturalar" name="gvn_active" domain="[('gvn_active', '=', True)]"/>
                 <filter string="Geçerli Olmayan Faturalar" name="gvn_pasive" domain="[('gvn_active', '=', False)]"/>
                 <separator/>
-                <filter string="Bu Ay" name="this_month" 
+                <filter string="Bu Ay" name="this_month"
                         domain="[('issue_date', '&gt;=', (context_today() - relativedelta(day=1)).strftime('%Y-%m-%d')),
                                 ('issue_date', '&lt;', (context_today() + relativedelta(day=31)).strftime('%Y-%m-%d'))]"/>
-                <filter string="Geçen Ay" name="last_month" 
+                <filter string="Geçen Ay" name="last_month"
                         domain="[('issue_date', '&gt;=', (context_today() - relativedelta(months=1, day=1)).strftime('%Y-%m-%d')),
                                 ('issue_date', '&lt;', (context_today() - relativedelta(day=1)).strftime('%Y-%m-%d'))]"/>
                 <group expand="0" string="Grupla">
                     <filter string="Yön" name="group_direction" context="{'group_by': 'direction'}"/>
+                    <filter string="Kaynak" name="group_kaynak" context="{'group_by': 'kaynak'}"/>
                     <filter string="Durum Detayı" name="group_status" context="{'group_by': 'status_detail'}"/>
                     <filter string="Fatura Tarihi" name="group_issue_date" context="{'group_by': 'issue_date:month'}"/>
                 </group>
@@ -147,14 +160,16 @@
         <field name="name">e.invoice.sync.wizard.form</field>
         <field name="model">e.invoice.sync.wizard</field>
         <field name="arch" type="xml">
-            <form string="E-Fatura Senkronizasyonu">
+            <form string="E-Fatura/E-Arşiv Senkronizasyonu">
                 <group>
                     <group>
+                        <field name="invoice_source" widget="radio"/>
                         <field name="start_date"/>
                         <field name="end_date"/>
                     </group>
                     <group>
-                        <field name="direction"/>
+                        <!-- Direction sadece E-Fatura seçilince görünsün -->
+                        <field name="direction" invisible="invoice_source == 'e-arsiv'"/>
                     </group>
                 </group>
                 <footer>

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, ValidationError
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 from zeep import Client, Settings
 from zeep.transports import Transport
@@ -70,17 +70,55 @@ class e_invoice(models.Model):
     exists_in_logo = fields.Boolean(string='Logo\'da Var', default=False, help="Logo entegrasyonunda bu fatura var mı?")
     logo_record_id = fields.Integer(string='Logo Kayıt ID', help="Logo entegrasyonunda bu faturanın ID'si")
 
+    # Kaynak Bilgisi
+    kaynak = fields.Selection([
+        ('e-fatura', 'E-Fatura'),
+        ('e-arsiv', 'E-Arşiv'),
+        ('e-irsaliye', 'E-İrsaliye'),
+    ], string='Kaynak', default='e-fatura', required=True, index=True, tracking=True, help="Belgenin kaynağı")
+
+    # E-Arşiv Özel Alanları
+    currency_code = fields.Char(
+        string='Para Birimi',
+        size=3,
+        help="Para birimi kodu (TRY, USD, EUR, etc.)"
+    )
+    reported = fields.Boolean(
+        string='Raporlandı',
+        default=False,
+        help="E-Arşiv faturası raporlandı mı?"
+    )
+    earchive_type = fields.Char(
+        string='E-Arşiv Tipi',
+        help="E-Arşiv fatura tipi (EARCHIVE_TYPE)"
+    )
+    sending_type = fields.Char(
+        string='Gönderim Tipi',
+        help="E-Arşiv gönderim tipi (SENDING_TYPE)"
+    )
+
     # Notlar
     notes = fields.Text(string='Notlar')
 
-    @api.depends('status_code')
+    @api.depends('status_code', 'kaynak')
     def _compute_active(self):
+        """Geçerli faturaları belirle - kaynak tipine göre farklı mantık"""
         for record in self:
-            record.gvn_active = not record.status_code in ['116', '120', '130', '136']
+            if record.kaynak == 'e-arsiv':
+                # E-Arşiv için geçersiz status kodları
+                # 150: RAPORLANMADAN İPTAL EDİLDİ
+                # 200: FATURA ID BULUNAMADI
+                record.gvn_active = record.status_code not in ['150', '200']
+            else:
+                # E-Fatura için geçersiz status kodları
+                # 116: Geçersiz, 120: Ret Edildi, 130: Reddedildi, 136: GİB'e Gönderim Hatası
+                record.gvn_active = record.status_code not in ['116', '120', '130', '136']
 
-    @api.depends('status_code')
+    @api.depends('status_code', 'kaynak')
     def _get_status_detail(self):
-        code_details = {
+        """Durum kodunu açıklamaya çevir - kaynak tipine göre farklı açıklamalar"""
+        # E-Fatura durum kodları
+        efatura_code_details = {
             # Giden Fatura Durumları
             '100': 'Durum Sorgulanması Yapmaya Devam Edilecek',
             '101': 'Fatura Yükleme - Başarılı',
@@ -104,11 +142,10 @@ class e_invoice(models.Model):
             '139': 'Otomatik Gönderim Hatası',
             '140': 'Belge Numarası Atandı',
             '141': 'Belge Numarası Atandı',
-            
+
             # Gelen Fatura Durumları
             '133': 'Temel Fatura Alındı',
             '132': 'Ticari Fatura Yanıt Bekliyor',
-            '134': 'İşlem Sistem Tarafından Tekrarlanacaktır',
             '122': 'Kabul Edildi',
             '123': 'Kabul İşleniyor',
             '124': 'Kabul GİB\'den Yanıt Bekliyor',
@@ -120,12 +157,31 @@ class e_invoice(models.Model):
             '130': 'Reddedildi',
             '131': 'Red İşlemi Başarısız',
         }
-        
+
+        # E-Arşiv durum kodları
+        earsiv_code_details = {
+            '100': 'Kuyruğa Eklendi',
+            '105': 'Taslak Olarak Eklendi',
+            '110': 'İşleniyor',
+            '120': 'Raporlanacak',
+            '130': 'Raporlandı',  # ✅ E-Arşiv için başarılı durum
+            '150': 'Raporlanmadan İptal Edildi. Raporlanmayacak.',
+            '200': 'Fatura ID Bulunamadı',
+        }
+
         for record in self:
-            if record.status_code in code_details:
-                record.status_detail = code_details[record.status_code]
+            if record.kaynak == 'e-arsiv':
+                # E-Arşiv için özel durum kodları
+                if record.status_code in earsiv_code_details:
+                    record.status_detail = earsiv_code_details[record.status_code]
+                else:
+                    record.status_detail = f'Bilinmeyen Durum ({record.status_code})'
             else:
-                record.status_detail = 'Bilinmeyen Durum Kodu: {}'.format(record.status_code)
+                # E-Fatura için durum kodları
+                if record.status_code in efatura_code_details:
+                    record.status_detail = efatura_code_details[record.status_code]
+                else:
+                    record.status_detail = f'Bilinmeyen Durum ({record.status_code})'
 
     @api.model
     def _parse_date_field(self, date_string, field_name="tarih"):
@@ -146,13 +202,18 @@ class e_invoice(models.Model):
         date_string = str(date_string).strip()
             
         try:
-            # Özel durum: YYYY-MM-DD+HH:MM formatı (sizin SOAP servisinizden gelen)
-            if len(date_string) > 10 and '+' in date_string and 'T' not in date_string:
-                # 2025-05-02+03:00 -> timezone aware datetime elde et
-                parsed_dt = datetime.fromisoformat(date_string)
-                # UTC'ye çevir ve timezone bilgisini kaldır (naive hale getir)
-                utc_dt = parsed_dt.utctimetuple()
-                return datetime(*utc_dt[:6])
+            # ÖZEL DURUM: ISSUE_DATE için sadece tarih + timezone formatı (YYYY-MM-DD+HH:MM)
+            # Örnek: 2025-01-01+03:00 → Sadece tarih kısmını al (saat bilgisi yok)
+            if '+' in date_string and 'T' not in date_string:
+                date_part = date_string.split('+')[0]
+                if len(date_part) == 10:  # YYYY-MM-DD (sadece tarih)
+                    # Timezone kısmını ignore et, sadece tarihi al (00:00:00 olarak)
+                    try:
+                        return datetime.fromisoformat(date_part)
+                    except ValueError:
+                        pass
+                # Eğer date_part 10 karakterden fazlaysa (saat bilgisi varsa)
+                # O zaman eski yöntemi kullan (aşağıya düşecek)
             
             # ISO format kontrolü (öncelikli - SOAP servislerde yaygın)
             if 'T' in date_string:
@@ -171,8 +232,8 @@ class e_invoice(models.Model):
                 else:
                     return parsed_dt
             
-            # Timezone offset'li tarih kontrolü (YYYY-MM-DD+HH:MM formatı)
-            if '+' in date_string or date_string.endswith('Z'):
+            # Timezone offset'li TAM tarih-saat kontrolü (YYYY-MM-DDTHH:MM:SS+HH:MM formatı)
+            if 'T' in date_string and ('+' in date_string or date_string.endswith('Z')):
                 try:
                     parsed_dt = datetime.fromisoformat(date_string)
                     # UTC'ye çevir ve naive yap
@@ -194,6 +255,7 @@ class e_invoice(models.Model):
                 
             # Diğer yaygın formatları dene
             date_formats = [
+                '%d-%m-%Y %H:%M:%S',  # 02-01-2025 15:23:28 (E-Arşiv format)
                 '%Y-%m-%d %H:%M:%S',  # 2025-05-02 14:30:00
                 '%Y-%m-%dT%H:%M:%S',  # 2025-05-02T14:30:00
                 '%Y-%m-%d',           # 2025-05-02
@@ -275,12 +337,13 @@ class e_invoice(models.Model):
     def create_from_soap_data(self, soap_data):
         """SOAP servisinden gelen veriyi Odoo modeline dönüştür"""
         invoice_vals = {}
-        
+
         if isinstance(soap_data, dict):
             # Ana bilgiler
             invoice_vals['invoice_id'] = soap_data.get('ID')
             invoice_vals['uuid'] = soap_data.get('UUID')
             invoice_vals['direction'] = soap_data.get('direction', 'IN')
+            invoice_vals['kaynak'] = 'e-fatura'  # E-Fatura kaynağı
             
             # Header bilgilerini işle
             header = soap_data.get('HEADER', {})
@@ -330,43 +393,72 @@ class e_invoice(models.Model):
         return self.create(invoice_vals)
 
     @api.model
+    def _get_soap_client_and_login(self):
+        """
+        Ortak SOAP client oluşturma ve login metodu
+        E-Fatura ve E-Arşiv için ortak kullanılabilir
+
+        Returns:
+            tuple: (efatura_client, session_id, transport, settings)
+        """
+        soap_config = self.env['ir.config_parameter'].sudo()
+        username = soap_config.get_param('efatura.username')
+        password = soap_config.get_param('efatura.password')
+        efatura_ws = soap_config.get_param('efatura.ws_url',
+            'https://efaturaws.izibiz.com.tr/EInvoiceWS?wsdl')
+
+        if not username or not password:
+            raise UserError(_("SOAP kimlik bilgileri yapılandırılmamış!"))
+
+        # SOAP transport ayarları
+        session_ws = requests.Session()
+        session_ws.verify = True
+        transport_ws = Transport(session=session_ws, timeout=60)
+        settings_ws = Settings(strict=False, xml_huge_tree=True, forbid_dtd=False, forbid_entities=False)
+
+        # E-Fatura Client oluştur
+        efatura_client = Client(wsdl=efatura_ws, transport=transport_ws, settings=settings_ws)
+
+        # Login
+        request_header = {
+            'SESSION_ID': '-1',
+            'APPLICATION_NAME': 'Odoo SOAP Client',
+        }
+
+        login_response = efatura_client.service.Login(
+            REQUEST_HEADER=request_header,
+            USER_NAME=username,
+            PASSWORD=password
+        )
+        session_id = login_response.SESSION_ID
+        _logger.info("SOAP Login başarılı. Session ID: %s", session_id)
+
+        return efatura_client, session_id, transport_ws, settings_ws
+
+    @api.model
     def sync_invoices_from_soap(self, start_date, end_date, direction='IN'):
         """SOAP servisinden faturaları senkronize et - Logo otomatik sync ile"""
         try:
-            # SOAP servisi ayarları (config'den alınmalı)
-            soap_config = self.env['ir.config_parameter'].sudo()
-            username = soap_config.get_param('efatura.username')
-            password = soap_config.get_param('efatura.password')
-            
-            if not username or not password:
-                raise ValueError("E-Fatura SOAP servisi kimlik bilgileri eksik")
-            
-            # SOAP istemcisi oluştur
-            session_ws = requests.Session()
-            session_ws.verify = True
-            transport_ws = Transport(session=session_ws)
-            settings_ws = Settings(strict=False, xml_huge_tree=True, forbid_dtd=False, forbid_entities=False)
-            
-            efatura_ws = soap_config.get_param('efatura.efatura_ws')
-            efatura_client = Client(wsdl=efatura_ws, transport=transport_ws, settings=settings_ws)
-            
-            # Login
-            request_header = {
-                'SESSION_ID': '-1',
-                'APPLICATION_NAME': 'Odoo E-Fatura Client',
-            }
-            session_id = efatura_client.service.Login(
-                REQUEST_HEADER=request_header,
-                USER_NAME=username,
-                PASSWORD=password
-            ).SESSION_ID
-            
+            # Ortak SOAP client ve login
+            efatura_client, session_id, transport_ws, settings_ws = self._get_soap_client_and_login()
+
             # Fatura listesini al
-            request_header['SESSION_ID'] = session_id
+            request_header = {'SESSION_ID': session_id}
+
+            # Tarihleri datetime objesine çevir (SOAP servisi datetime bekliyor)
+            from datetime import datetime as dt
+            try:
+                start_dt = dt.strptime(start_date, '%Y-%m-%d')
+                end_dt = dt.strptime(end_date, '%Y-%m-%d')
+            except:
+                # Eğer parse edemezse bugünden başla
+                end_dt = dt.now()
+                start_dt = end_dt - timedelta(days=7)
+
             search_key = {
                 'LIMIT': '25000',
-                'START_DATE': start_date,
-                'END_DATE': end_date,
+                'START_DATE': start_dt,
+                'END_DATE': end_dt,
                 'READ_INCLUDED': 'true',
                 'DIRECTION': direction,
             }
@@ -381,18 +473,18 @@ class e_invoice(models.Model):
                 # XML'i parse et
                 root = ET.fromstring(raw_xml_response.content)
                 invoices = []
-                
+
                 for invoice_elem in root.findall('.//INVOICE') or root.findall('.//*[local-name()="INVOICE"]'):
                     invoice_data = {}
                     header_elem = invoice_elem.find('HEADER') or invoice_elem.find('.//*[local-name()="HEADER"]')
-                    
+
                     if header_elem is not None:
                         header_data = {}
                         for child in header_elem:
                             tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
                             header_data[tag_name] = child.text
                         invoice_data['HEADER'] = header_data
-                    
+
                     invoice_data['ID'] = invoice_elem.get('ID')
                     invoice_data['UUID'] = invoice_elem.get('UUID')
                     invoice_data['direction'] = direction
@@ -502,6 +594,257 @@ class e_invoice(models.Model):
                     parsed_amount = self._parse_financial_field(header.get(soap_field), soap_field)
                     vals[odoo_field] = parsed_amount
         
+        return vals
+
+    @api.model
+    def sync_earsiv_from_soap(self, start_date, end_date):
+        """
+        E-Arşiv faturalarını SOAP servisinden çek ve Odoo'ya kaydet
+
+        Args:
+            start_date (str): Başlangıç tarihi (YYYY-MM-DD)
+            end_date (str): Bitiş tarihi (YYYY-MM-DD)
+
+        Returns:
+            dict: {'success': bool, 'created': int, 'updated': int, 'message': str}
+        """
+        try:
+            _logger.info("E-Arşiv senkronizasyonu başlatılıyor: %s - %s", start_date, end_date)
+
+            # 1. Ortak SOAP client ve login
+            efatura_client, session_id, transport_ws, settings_ws = self._get_soap_client_and_login()
+
+            # 2. E-Arşiv Client oluştur
+            soap_config = self.env['ir.config_parameter'].sudo()
+            earsiv_ws = soap_config.get_param('efatura.earsiv_ws',
+                'https://earsivws.izibiz.com.tr/EIArchiveWS/EFaturaArchive?wsdl')
+            earsiv_client = Client(wsdl=earsiv_ws, transport=transport_ws, settings=settings_ws)
+
+            # 3. GetEArchiveInvoiceList ile liste çek
+            request_header = {'SESSION_ID': session_id}
+
+            # Tarihleri datetime objesine çevir (SOAP servisi datetime bekliyor)
+            from datetime import datetime as dt
+            try:
+                start_dt = dt.strptime(start_date, '%Y-%m-%d')
+                end_dt = dt.strptime(end_date, '%Y-%m-%d')
+            except:
+                # Eğer parse edemezse bugünden başla
+                end_dt = dt.now()
+                start_dt = end_dt - timedelta(days=7)
+
+            _logger.info("E-Arşiv fatura listesi çekiliyor: %s - %s", start_dt, end_dt)
+
+            # E-Fatura pattern: raw_response ile XML parse
+            with earsiv_client.settings(raw_response=True):
+                raw_xml_response = earsiv_client.service.GetEArchiveInvoiceList(
+                    REQUEST_HEADER=request_header,
+                    LIMIT=25000,
+                    START_DATE=start_dt,
+                    END_DATE=end_dt,
+                    HEADER_ONLY='Y',
+                    READ_INCLUDED='true'
+                )
+
+            _logger.info("E-Arşiv SOAP Response alındı, XML parse ediliyor...")
+
+            # 4. XML Parse (E-Fatura pattern with namespace fallback)
+            root = ET.fromstring(raw_xml_response.content)
+            invoices = []
+
+            # Namespace fallback - namespace varsa da yoksa da çalışır
+            for invoice_elem in root.findall('.//INVOICE') or root.findall('.//*[local-name()="INVOICE"]'):
+                invoice_data = {}
+
+                # Attribute'ler (ID, UUID, etc.)
+                for attr_name, attr_value in invoice_elem.attrib.items():
+                    invoice_data[attr_name] = attr_value
+
+                # HEADER elementi - namespace fallback ile
+                header_elem = invoice_elem.find('.//HEADER') or invoice_elem.find('.//*[local-name()="HEADER"]')
+                if header_elem is not None:
+                    header_data = {}
+                    for child in header_elem:
+                        tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                        header_data[tag_name] = child.text
+                    invoice_data['HEADER'] = header_data
+
+                invoices.append(invoice_data)
+
+            _logger.info("Toplam %s E-Arşiv fatura bulundu", len(invoices))
+
+            # 5. Logout
+            efatura_client.service.Logout(REQUEST_HEADER=request_header)
+            _logger.info("Logout başarılı")
+
+            # 6. Response'u parse et ve kaydet
+            created_count = 0
+            updated_count = 0
+
+            if invoices:
+                for invoice_data in invoices:
+                    try:
+                        # Mevcut kayıt kontrolü (E-Fatura pattern)
+                        invoice_id = invoice_data.get('ID') or invoice_data.get('HEADER', {}).get('INVOICE_ID')
+
+                        existing_invoice = self.search([
+                            ('invoice_id', '=', invoice_id),
+                            ('kaynak', '=', 'e-arsiv')
+                        ], limit=1)
+
+                        if existing_invoice:
+                            # Güncelle
+                            invoice_vals = self._prepare_earsiv_vals_from_soap(invoice_data)
+                            existing_invoice.write(invoice_vals)
+                            updated_count += 1
+                            _logger.info("E-Arşiv fatura güncellendi: %s", invoice_id)
+                        else:
+                            # Yeni oluştur
+                            self.create_from_earsiv_soap_data(invoice_data)
+                            created_count += 1
+
+                    except Exception as e:
+                        _logger.error("E-Arşiv fatura kaydedilirken hata: %s", str(e))
+                        continue
+            else:
+                _logger.info("E-Arşiv fatura bulunamadı")
+
+            result = {
+                'success': True,
+                'created': created_count,
+                'updated': updated_count,
+                'message': _('%s yeni E-Arşiv fatura oluşturuldu, %s fatura güncellendi.') % (created_count, updated_count)
+            }
+
+            # Otomatik Logo senkronizasyonu kontrolü
+            logo_auto_sync = soap_config.get_param('logo.auto_sync', False)
+
+            if logo_auto_sync and result.get('success'):
+                try:
+                    # Logo senkronizasyonu çalıştır
+                    logo_wizard = self.env['logo.sync.wizard'].create({
+                        'sync_mode': 'filtered',
+                        'date_filter': True,
+                        'date_from': start_date,
+                        'date_to': end_date,
+                        'direction_filter': 'OUT',  # E-Arşiv her zaman giden
+                    })
+
+                    logo_result = logo_wizard.action_sync_logo()
+                    result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik olarak çalıştırıldı.')
+
+                except Exception as e:
+                    _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s", str(e))
+                    result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s') % str(e)
+
+            return result
+
+        except Exception as e:
+            _logger.error("E-Arşiv SOAP senkronizasyon hatası: %s", str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    @api.model
+    def create_from_earsiv_soap_data(self, soap_data):
+        """
+        E-Arşiv SOAP verisini Odoo modeline dönüştür ve kaydet
+
+        WSDL Structure:
+        - INVOICE
+          - HEADER (dict with fields below)
+            - INVOICE_ID, UUID, SENDER_NAME, SENDER_IDENTIFIER
+            - CUSTOMER_NAME, CUSTOMER_IDENTIFIER
+            - PROFILE_ID, INVOICE_TYPE, EARCHIVE_TYPE, SENDING_TYPE
+            - STATUS, STATUS_CODE, ISSUE_DATE
+            - PAYABLE_AMOUNT, TAXABLE_AMOUNT, CURRENCY_CODE
+            - REPORTED
+
+        Args:
+            soap_data (dict): SOAP'tan gelen INVOICE data (with HEADER)
+
+        Returns:
+            recordset: Oluşturulan/Güncellenen e.invoice kaydı
+        """
+        # XML Parse sonucu gelen data yapısı:
+        # soap_data = {
+        #   'ID': '...',  # Attribute'den
+        #   'UUID': '...', # Attribute'den
+        #   'HEADER': {
+        #     'INVOICE_ID': '...',
+        #     'SENDER_NAME': '...',
+        #     ...
+        #   }
+        # }
+
+        header = soap_data.get('HEADER', {})
+
+        invoice_vals = {
+            # HARD-CODED Values
+            'direction': 'OUT',  # E-Arşiv her zaman giden
+            'kaynak': 'e-arsiv',
+            'receiver': '4510016851',  # Bizim VKN (company)
+
+            # Ana Bilgiler - Attribute'lerden ve HEADER'dan
+            'invoice_id': soap_data.get('ID') or header.get('INVOICE_ID'),
+            'uuid': soap_data.get('UUID') or header.get('UUID'),
+            'sender': header.get('SENDER_IDENTIFIER'),  # VKN/TCKN
+            'supplier': header.get('SENDER_NAME'),  # Unvan
+            'customer': header.get('CUSTOMER_NAME'),  # Müşteri adı
+            'profile_id': header.get('PROFILE_ID'),  # EARSIVFATURA
+            'invoice_type_code': header.get('INVOICE_TYPE'),  # SATIS, IADE
+            'status': header.get('STATUS'),
+            'status_code': header.get('STATUS_CODE'),
+
+            # Tarih ve Tutarlar
+            'issue_date': self._parse_date_field(header.get('ISSUE_DATE'), 'ISSUE_DATE'),
+            'payable_amount': self._parse_financial_field(header.get('PAYABLE_AMOUNT'), 'PAYABLE_AMOUNT'),
+            'tax_exclusive_total_amount': self._parse_financial_field(header.get('TAXABLE_AMOUNT'), 'TAXABLE_AMOUNT'),
+
+            # E-Arşiv Özel Alanlar (4 yeni alan)
+            'currency_code': header.get('CURRENCY_CODE'),
+            'reported': header.get('REPORTED') == 'Y',
+            'earchive_type': header.get('EARCHIVE_TYPE'),
+            'sending_type': header.get('SENDING_TYPE'),
+        }
+
+        # Yeni kayıt oluştur
+        new_record = self.create(invoice_vals)
+        _logger.info("Yeni E-Arşiv fatura oluşturuldu: %s", invoice_vals['invoice_id'])
+        return new_record
+
+    def _prepare_earsiv_vals_from_soap(self, soap_data):
+        """E-Arşiv SOAP verisini update vals formatına dönüştür"""
+        header = soap_data.get('HEADER', {})
+
+        vals = {
+            # HARD-CODED Values (update sırasında değişmez ama tutarlılık için ekle)
+            'direction': 'OUT',
+            'kaynak': 'e-arsiv',
+            'receiver': '4510016851',
+
+            # Ana Bilgiler - Güncellenebilir
+            'sender': header.get('SENDER_IDENTIFIER'),
+            'supplier': header.get('SENDER_NAME'),
+            'customer': header.get('CUSTOMER_NAME'),
+            'profile_id': header.get('PROFILE_ID'),
+            'invoice_type_code': header.get('INVOICE_TYPE'),
+            'status': header.get('STATUS'),
+            'status_code': header.get('STATUS_CODE'),
+
+            # Tarih ve Tutarlar
+            'issue_date': self._parse_date_field(header.get('ISSUE_DATE'), 'ISSUE_DATE'),
+            'payable_amount': self._parse_financial_field(header.get('PAYABLE_AMOUNT'), 'PAYABLE_AMOUNT'),
+            'tax_exclusive_total_amount': self._parse_financial_field(header.get('TAXABLE_AMOUNT'), 'TAXABLE_AMOUNT'),
+
+            # E-Arşiv Özel Alanlar
+            'currency_code': header.get('CURRENCY_CODE'),
+            'reported': header.get('REPORTED') == 'Y',
+            'earchive_type': header.get('EARCHIVE_TYPE'),
+            'sending_type': header.get('SENDING_TYPE'),
+        }
+
         return vals
 
     @api.model
@@ -710,6 +1053,11 @@ class EInvoiceReport(models.Model):
     month = fields.Char('Ay')
     year = fields.Char('Yıl')
     direction = fields.Selection([('IN', 'Gelen'), ('OUT', 'Giden')], 'Yön')
+    kaynak = fields.Selection([
+        ('e-fatura', 'E-Fatura'),
+        ('e-arsiv', 'E-Arşiv'),
+        ('e-irsaliye', 'E-İrsaliye'),
+    ], string='Kaynak')
     sender = fields.Char('Gönderen')
     receiver = fields.Char('Alıcı')
     invoice_count = fields.Integer('Fatura Sayısı')
@@ -727,6 +1075,7 @@ class EInvoiceReport(models.Model):
                     TO_CHAR(ei.issue_date, 'YYYY-MM') as month,
                     TO_CHAR(ei.issue_date, 'YYYY') as year,
                     ei.direction,
+                    ei.kaynak,
                     ei.sender,
                     ei.receiver,
                     COUNT(*) as invoice_count,
@@ -740,6 +1089,7 @@ class EInvoiceReport(models.Model):
                     TO_CHAR(ei.issue_date, 'YYYY-MM'),
                     TO_CHAR(ei.issue_date, 'YYYY'),
                     ei.direction,
+                    ei.kaynak,
                     ei.sender,
                     ei.receiver,
                     ei.status
@@ -749,8 +1099,14 @@ class EInvoiceReport(models.Model):
 
 class e_invoice_sync_wizard(models.TransientModel):
     _name = 'e.invoice.sync.wizard'
-    _description = 'E-Fatura Senkronizasyon Sihirbazı'
-    
+    _description = 'E-Fatura/E-Arşiv Senkronizasyon Sihirbazı'
+
+    invoice_source = fields.Selection([
+        ('e-fatura', 'E-Fatura'),
+        ('e-arsiv', 'E-Arşiv'),
+    ], string='Kaynak', default='e-fatura', required=True,
+       help="Senkronize edilecek belge kaynağı")
+
     start_date = fields.Date(string='Başlangıç Tarihi', required=True)
     end_date = fields.Date(string='Bitiş Tarihi', required=True)
     direction = fields.Selection([
@@ -760,7 +1116,7 @@ class e_invoice_sync_wizard(models.TransientModel):
     
     def action_sync(self):
         """Senkronizasyon işlemini başlat"""
-        
+
         # Tarih validasyonu
         if self.start_date > self.end_date:
             return {
@@ -772,7 +1128,7 @@ class e_invoice_sync_wizard(models.TransientModel):
                     'sticky': True,
                 }
             }
-        
+
         # Tarih aralığı kontrolü (en fazla 7 gün)
         date_diff = (self.end_date - self.start_date).days
         if date_diff > 7:
@@ -785,14 +1141,33 @@ class e_invoice_sync_wizard(models.TransientModel):
                     'sticky': True,
                 }
             }
-        
-        # Validasyon geçildiyse senkronizasyon işlemini başlat
-        result = self.env['e.invoice'].sync_invoices_from_soap(
-            self.start_date.strftime('%Y-%m-%d'),
-            self.end_date.strftime('%Y-%m-%d'),
-            self.direction
-        )
-                
+
+        # Kaynak seçimine göre farklı metod çağır
+        if self.invoice_source == 'e-fatura':
+            # Mevcut E-Fatura senkronizasyonu
+            result = self.env['e.invoice'].sync_invoices_from_soap(
+                self.start_date.strftime('%Y-%m-%d'),
+                self.end_date.strftime('%Y-%m-%d'),
+                self.direction  # Kullanıcı seçimi
+            )
+        elif self.invoice_source == 'e-arsiv':
+            # Yeni E-Arşiv senkronizasyonu
+            result = self.env['e.invoice'].sync_earsiv_from_soap(
+                self.start_date.strftime('%Y-%m-%d'),
+                self.end_date.strftime('%Y-%m-%d')
+                # direction parametresi YOK - kod içinde 'OUT' hard-coded
+            )
+        else:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'message': _("Hata: Geçersiz kaynak seçimi!"),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
         if result.get('success'):
             return {
                 'type': 'ir.actions.client',
@@ -1255,7 +1630,13 @@ class EInvoiceConfigSettings(models.TransientModel):
         ('weekly', 'Haftalık'),
         ('monthly', 'Aylık')
     ], string='Senkronizasyon Sıklığı', config_parameter='efatura.sync_interval', default='daily')
-    
+    efatura_earsiv_ws = fields.Char(
+        string='E-Arşiv WS URL',
+        config_parameter='efatura.earsiv_ws',
+        default='https://earsivws.izibiz.com.tr/EIArchiveWS/EFaturaArchive?wsdl',
+        help="E-Arşiv fatura SOAP servis adresi"
+    )
+
     # Logo MSSQL Ayarları
     logo_mssql_server = fields.Char(
         string='MSSQL Server',
@@ -1312,7 +1693,9 @@ class EInvoiceConfigSettings(models.TransientModel):
             efatura_password=ICPSudo.get_param('efatura.password', ''),
             efatura_auto_sync=str_to_bool(ICPSudo.get_param('efatura.auto_sync', 'False')),  # ✅ Düzeltildi
             efatura_sync_interval=ICPSudo.get_param('efatura.sync_interval', 'daily'),
-            
+            efatura_earsiv_ws=ICPSudo.get_param('efatura.earsiv_ws',
+                'https://earsivws.izibiz.com.tr/EIArchiveWS/EFaturaArchive?wsdl'),
+
             # Logo MSSQL ayarları
             logo_mssql_server=ICPSudo.get_param('logo.mssql_server', ''),
             logo_mssql_port=int(ICPSudo.get_param('logo.mssql_port', '1433')),
@@ -1333,6 +1716,8 @@ class EInvoiceConfigSettings(models.TransientModel):
         ICPSudo.set_param('efatura.password', self.efatura_password or '')
         ICPSudo.set_param('efatura.auto_sync', str(self.efatura_auto_sync))  # ✅ String'e çevir
         ICPSudo.set_param('efatura.sync_interval', self.efatura_sync_interval)
+        ICPSudo.set_param('efatura.earsiv_ws', self.efatura_earsiv_ws or
+            'https://earsivws.izibiz.com.tr/EIArchiveWS/EFaturaArchive?wsdl')
         
         # Logo MSSQL ayarları
         ICPSudo.set_param('logo.mssql_server', self.logo_mssql_server or '')
@@ -1482,13 +1867,14 @@ class LogoKdv2Wizard(models.TransientModel):
         try:
             connection = pymssql.connect(
                 server=server,
-                port=port,
+                port=str(port),
                 user=username,
                 password=password,
                 database=database,
-                timeout=30,
-                login_timeout=30,
-                charset='UTF-8'
+                timeout=120,
+                login_timeout=60,
+                charset='UTF-8',
+                appname='Odoo E-Fatura'
             )
             return connection
         except Exception as e:
@@ -1496,10 +1882,12 @@ class LogoKdv2Wizard(models.TransientModel):
     
     def action_generate_report(self):
         """KDV-2 raporunu oluştur"""
+        conn = None
+        cursor = None
         try:
             # Mevcut kayıtları temizle
             self.env['logo.kdv2.report'].search([]).unlink()
-            
+
             # MSSQL bağlantısı
             conn = self._get_mssql_connection()
             cursor = conn.cursor(as_dict=True)
@@ -1569,6 +1957,7 @@ FROM  LG_600_01_EMFLINE A WITH(NOLOCK)
             JOIN LG_600_SRVCARD SC WITH(NOLOCK) ON SC.LOGICALREF=STL.STOCKREF
             WHERE STL.LINETYPE = 4
             AND SC.CANDEDUCT=1
+            AND (STL.DEDUCTIONPART1 != 0 AND STL.DEDUCTIONPART2 !=0 )
             ) SSTL ON SSTL.INVOICEREF = N1.LOGICALREF 
 INNER JOIN (
             SELECT EML.ACCFICHEREF, CREDIT AS VATAMOUNT, F.CODE AS VATCODE,
@@ -1630,8 +2019,6 @@ AND AA.MODULENR=2
                 }
                 records.append(self.env['logo.kdv2.report'].create(vals))
             
-            conn.close()
-            
             if records:
                 # Rapor görünümünü aç
                 return {
@@ -1652,10 +2039,16 @@ AND AA.MODULENR=2
                         'sticky': False,
                     }
                 }
-                
+
         except Exception as e:
             _logger.error("KDV-2 rapor hatası: %s", str(e))
             raise UserError(_("Rapor oluşturma hatası: %s") % str(e))
+        finally:
+            # Bağlantıyı kapat
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
 
 class LogoMuhtasarReport(models.TransientModel):
@@ -1696,6 +2089,7 @@ class LogoMuhtasarReport(models.TransientModel):
     fatura_no = fields.Char(string='Fatura No', readonly=True)
     adres1 = fields.Char(string='Adres', readonly=True)
     ulke = fields.Char(string='Ülke', readonly=True)
+    vergi = fields.Char(string='Vergi', readonly=True)
 
 
 class LogoMuhtasarWizard(models.TransientModel):
@@ -1741,56 +2135,59 @@ class LogoMuhtasarWizard(models.TransientModel):
                 user=username,
                 password=password,
                 database=database,
-                timeout=30,
-                login_timeout=30,
-                charset='UTF-8'
+                timeout=120,
+                login_timeout=60,
+                charset='UTF-8',
+                appname='Odoo E-Fatura'
             )
             return connection
         except Exception as e:
             raise UserError(_("MSSQL bağlantı hatası: %s") % str(e))
-    
+
     def action_generate_report(self):
         """Muhtasar raporunu oluştur"""
+        conn = None
+        cursor = None
         try:
             # Mevcut kayıtları temizle
             self.env['logo.muhtasar.report'].search([]).unlink()
-            
+
             # MSSQL bağlantısı
             conn = self._get_mssql_connection()
             cursor = conn.cursor(as_dict=True)
             
             # SQL sorgusunu çalıştır
             query = """
-SELECT  
-CASE 
-  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.002' THEN 'S.M MAKBUZU' 
-  WHEN F.CODE = '360.10.01.003' THEN 'KİRA GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.004' THEN 'GİDER PUSULASI GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.005' THEN 'YURT DIŞI HİZMERT ALIMI GELİR VERGİSİ' 
-  WHEN F.CODE LIKE '7%' THEN 'VERGİ' 
+SELECT 
+CASE
+    WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.002' THEN 'S.M MAKBUZU'
+    WHEN F.CODE = '360.10.01.003' THEN 'KİRA GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.004' THEN 'GİDER PUSULASI GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.005' THEN 'YURT DIŞI HİZMERT ALIMI GELİR VERGİSİ'
+    WHEN F.CODE LIKE '7%' THEN 'VERGİ' 
 END as odenecekGelirVergileri,
-CASE 
-  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.002' THEN '022' 
-  WHEN F.CODE = '360.10.01.003' THEN '041' 
-  WHEN F.CODE = '360.10.01.004' THEN '156' 
-  WHEN F.CODE = '360.10.01.005' THEN '279' 
-  WHEN F.CODE LIKE '7%' THEN '' 
+CASE
+    WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.002' THEN '022'
+    WHEN F.CODE = '360.10.01.003' THEN '041'
+    WHEN F.CODE = '360.10.01.004' THEN '156'
+    WHEN F.CODE = '360.10.01.005' THEN '279'
+    WHEN F.CODE LIKE '7%' THEN ''
 END as vergiTuru,
 A.DATE_ as tarih,
 MONTH(A.DATE_) as ay,
 YEAR(A.DATE_) as yil,
 AA.FICHENO as fisNo,
 CASE 
-  WHEN A.TRCODE=1 THEN '1 Açılış'
-  WHEN A.TRCODE=2 THEN '2 Tahsil'
-  WHEN A.TRCODE=3 THEN '3 Tediye'
-  WHEN A.TRCODE=4 THEN '4 Mahsup'
-  WHEN A.TRCODE=5 THEN '5 Özel'
-  WHEN A.TRCODE=6 THEN '6 Kur Farkı'
-  WHEN A.TRCODE=7 THEN '7 Kapanış'
-ELSE '' 
+    WHEN A.TRCODE=1 THEN '1 Açılış'
+    WHEN A.TRCODE=2 THEN '2 Tahsil'
+    WHEN A.TRCODE=3 THEN '3 Tediye'
+    WHEN A.TRCODE=4 THEN '4 Mahsup'
+    WHEN A.TRCODE=5 THEN '5 Özel'
+    WHEN A.TRCODE=6 THEN '6 Kur Farkı'
+    WHEN A.TRCODE=7 THEN '7 Kapanış'
+    ELSE '' 
 END as islem,
 CAST(C.NR AS CHAR(3))+' '+C.NAME as isYeri,
 CAST(D.NR AS CHAR(3))+' '+D.NAME as bolum,
@@ -1801,41 +2198,41 @@ F.CODE as hesapKodu,
 F.DEFINITION_ as hesapAdi,
 G.CODE+' '+G.DEFINITION_ as masrafMerkezi,
 CASE 
-  WHEN AA.MODULENR=1 THEN '1 Malzeme'
-  WHEN AA.MODULENR=2 THEN '2 Satınalma'
-  WHEN AA.MODULENR=3 THEN '3 Satış'
-  WHEN AA.MODULENR=4 THEN '4 Cari Hesap'
-  WHEN AA.MODULENR=5 THEN '5 Çek Senet'
-  WHEN AA.MODULENR=6 THEN '6 Banka'
-  WHEN AA.MODULENR=7 THEN '7 Kasa'
-ELSE '' 
+    WHEN AA.MODULENR=1 THEN '1 Malzeme'
+    WHEN AA.MODULENR=2 THEN '2 Satınalma'
+    WHEN AA.MODULENR=3 THEN '3 Satış'
+    WHEN AA.MODULENR=4 THEN '4 Cari Hesap'
+    WHEN AA.MODULENR=5 THEN '5 Çek Senet'
+    WHEN AA.MODULENR=6 THEN '6 Banka'
+    WHEN AA.MODULENR=7 THEN '7 Kasa'
+    ELSE '' 
 END as kaynakModul,
 -CASE 
-  WHEN A.TRCURR=0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN
-  WHEN A.TRCURR<>0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN A.TRNET-A.TRNET*2*A.SIGN
-  WHEN A.TRCURR=0 AND A1.DISTRATE<>100 THEN A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN
-  WHEN A.TRCURR<>0 AND A1.DISTRATE<>100 THEN A1.TRNET-A1.TRNET*2*A.SIGN
-ELSE 0 
-END as tutar,
+    WHEN A.TRCURR=0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN
+    WHEN A.TRCURR<>0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN A.TRNET-A.TRNET*2*A.SIGN
+    WHEN A.TRCURR=0 AND A1.DISTRATE<>100 THEN A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN
+    WHEN A.TRCURR<>0 AND A1.DISTRATE<>100 THEN A1.TRNET-A1.TRNET*2*A.SIGN
+    ELSE 0 
+END  as tutar,
 CASE 
-  WHEN A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN ELSE A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN 
+    WHEN A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN 
+    ELSE A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN 
 END as tutarYerel,
 A.LINEEXP as aciklama,
 AA.GENEXP1 as fisAciklama,
-CASE
-  WHEN A.SIGN=0 THEN '0 Borç' 
-  WHEN A.SIGN=1 THEN '1 Alacak' 
-ELSE '' 
+CASE 
+    WHEN A.SIGN=0 THEN '0 Borç' WHEN A.SIGN=1 THEN '1 Alacak' 
+    ELSE '' 
 END as hareketYonu,
 CASE 
-  WHEN A.CANCELLED=0 THEN 'Hayır' 
-ELSE 'Evet' 
+    WHEN A.CANCELLED=0 THEN 'Hayır' 
+    ELSE 'Evet' 
 END as iptal,
 CASE AA.DOCTYPE 
-  WHEN 0 THEN 'Normal' 
-  WHEN 1 THEN 'Cost Of Sales'
-  WHEN 2 THEN 'Differences Of Cost Of Sales' 
-ELSE '' 
+    WHEN 0 THEN 'Normal' 
+    WHEN 1 THEN 'Cost Of Sales' 
+    WHEN 2 THEN 'Differences Of Cost Of Sales' 
+    ELSE '' 
 END as belgeTuru,
 A.CLDEF as cari,
 A.TAXNR as cariVergiNo,
@@ -1846,69 +2243,75 @@ CL.SURNAME as soyadi,
 N2.DOCODE as faturaBelgeNo, 
 N2.FICHENO as faturaNo,
 CL.ADDR1 as adres1,
-CL.COUNTRY as ulke
+CL.COUNTRY as ulke,
+-1 * SEML.TOTAL as vergi
 FROM  LG_600_01_EMFLINE A WITH(NOLOCK)
-  LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=A.ACCFICHEREF
-  LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=A.LOGICALREF
-  LEFT JOIN L_CAPIDIV C WITH(NOLOCK) ON C.NR=A.BRANCH AND C.FIRMNR=600
-  LEFT JOIN L_CAPIDEPT D WITH(NOLOCK) ON D.NR=A.DEPARTMENT AND D.FIRMNR=600
-  LEFT JOIN LG_600_PROJECT E WITH(NOLOCK) ON E.LOGICALREF=A1.PROJECTREF
-  LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=A.ACCOUNTREF
-  LEFT JOIN LG_600_EMUHACC F1 WITH(NOLOCK) ON F1.CODE=left(F.CODE,3)
-  LEFT JOIN LG_600_EMCENTER G WITH(NOLOCK) ON G.LOGICALREF=A.CENTERREF
-  LEFT JOIN L_CURRENCYLIST H WITH(NOLOCK) ON H.CURTYPE=A.TRCURR AND H.FIRMNR=600
-  LEFT JOIN LG_EXCHANGE_600 I WITH(NOLOCK) ON I.EDATE=A.DATE_ AND I.CRTYPE=20
-  LEFT JOIN LG_600_01_INVOICE N1 WITH(NOLOCK) ON N1.LOGICALREF = A.SOURCEFREF
-  LEFT JOIN LG_600_01_INVOICE N2 WITH(NOLOCK) ON N2.ACCFICHEREF = AA.LOGICALREF
-  LEFT JOIN LG_600_CLCARD CL WITH(NOLOCK)  ON CL.LOGICALREF = N2.CLIENTREF
-  INNER JOIN (
-            SELECT 
-                EML.ACCFICHEREF
-            FROM  LG_600_01_EMFLINE EML WITH(NOLOCK)
-              LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=EML.ACCFICHEREF
-              LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=EML.LOGICALREF
-              LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=EML.ACCOUNTREF
-            WHERE AA.CANCELLED = 0 
-              AND (F.CODE LIKE '360.10.01%')
-              AND MONTH(EML.DATE_)= %s
-              AND YEAR(EML.DATE_)= %s
-              AND AA.MODULENR=2) SEML ON  SEML.ACCFICHEREF = A.ACCFICHEREF
-WHERE AA.CANCELLED = 0 
-  AND (F.CODE LIKE '7%' OR F.CODE LIKE '360.10.01%')
-  AND AA.MODULENR=2
-  AND MONTH(A.DATE_)= %s
-  AND YEAR(A.DATE_)= %s
+    LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=A.ACCFICHEREF
+    LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=A.LOGICALREF
+    LEFT JOIN L_CAPIDIV C WITH(NOLOCK) ON C.NR=A.BRANCH AND C.FIRMNR=600
+    LEFT JOIN L_CAPIDEPT D WITH(NOLOCK) ON D.NR=A.DEPARTMENT AND D.FIRMNR=600
+    LEFT JOIN LG_600_PROJECT E WITH(NOLOCK) ON E.LOGICALREF=A1.PROJECTREF
+    LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=A.ACCOUNTREF
+    LEFT JOIN LG_600_EMUHACC F1 WITH(NOLOCK) ON F1.CODE=left(F.CODE,3)
+    LEFT JOIN LG_600_EMCENTER G WITH(NOLOCK) ON G.LOGICALREF=A.CENTERREF
+    LEFT JOIN L_CURRENCYLIST H WITH(NOLOCK) ON H.CURTYPE=A.TRCURR AND H.FIRMNR=600
+    LEFT JOIN LG_EXCHANGE_600 I WITH(NOLOCK) ON I.EDATE=A.DATE_ AND I.CRTYPE=20
+    LEFT JOIN LG_600_01_INVOICE N1 WITH(NOLOCK) ON N1.LOGICALREF = A.SOURCEFREF
+    LEFT JOIN LG_600_01_INVOICE N2 WITH(NOLOCK) ON N2.ACCFICHEREF = AA.LOGICALREF
+    LEFT JOIN LG_600_CLCARD CL WITH(NOLOCK)  ON CL.LOGICALREF = N2.CLIENTREF
+    INNER JOIN (
+                SELECT
+                EML.ACCFICHEREF, 
+                CASE 
+                    WHEN EML.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(EML.DEBIT-EML.CREDIT)-ABS(EML.DEBIT-EML.CREDIT)*2*EML.SIGN 
+                    ELSE A1.CREDEBNET-A1.CREDEBNET*2*EML.SIGN 
+                END AS TOTAL
+                FROM  LG_600_01_EMFLINE EML WITH(NOLOCK)
+                    LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=EML.ACCFICHEREF
+                    LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=EML.LOGICALREF
+                    LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=EML.ACCOUNTREF
+                WHERE AA.CANCELLED = 0
+                    AND (F.CODE LIKE '360.10.01%')
+                    AND MONTH(EML.DATE_)= %s                                      
+                    AND YEAR(EML.DATE_)= %s                     
+                    and AA.MODULENR=2
+                ) SEML ON  SEML.ACCFICHEREF = A.ACCFICHEREF
+WHERE AA.CANCELLED = 0
+    AND (F.CODE LIKE '7%')
+    AND MONTH(A.DATE_)= %s                 
+    AND YEAR(A.DATE_)= %s                   
+    and AA.MODULENR=2
 UNION ALL
-SELECT  
-CASE 
-  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.002' THEN 'S.M MAKBUZU' 
-  WHEN F.CODE = '360.10.01.003' THEN 'KİRA GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.004' THEN 'GİDER PUSULASI GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.005' THEN 'YURT DIŞI HİZMERT ALIMI GELİR VERGİSİ' 
-  WHEN F.CODE LIKE '7%' THEN 'VERGİ' 
+SELECT 
+CASE
+    WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.002' THEN 'S.M MAKBUZU'
+    WHEN F.CODE = '360.10.01.003' THEN 'KİRA GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.004' THEN 'GİDER PUSULASI GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.005' THEN 'YURT DIŞI HİZMERT ALIMI GELİR VERGİSİ'
+    WHEN F.CODE LIKE '7%' THEN 'VERGİ'
 END as odenecekGelirVergileri,
-CASE 
-  WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ' 
-  WHEN F.CODE = '360.10.01.002' THEN '022' 
-  WHEN F.CODE = '360.10.01.003' THEN '041' 
-  WHEN F.CODE = '360.10.01.004' THEN '156' 
-  WHEN F.CODE = '360.10.01.005' THEN '279' 
-  WHEN F.CODE LIKE '7%' THEN '' 
+CASE
+    WHEN F.CODE = '360.10.01.001' THEN 'ÜCRET GELİR VERGİSİ'
+    WHEN F.CODE = '360.10.01.002' THEN '022'
+    WHEN F.CODE = '360.10.01.003' THEN '041'
+    WHEN F.CODE = '360.10.01.004' THEN '156'
+    WHEN F.CODE = '360.10.01.005' THEN '279'
+    WHEN F.CODE LIKE '7%' THEN ''
 END as vergiTuru,
 A.DATE_ as tarih,
 MONTH(A.DATE_) as ay,
 YEAR(A.DATE_) as yil,
 AA.FICHENO as fisNo,
 CASE 
-  WHEN A.TRCODE=1 THEN '1 Açılış'
-  WHEN A.TRCODE=2 THEN '2 Tahsil'
-  WHEN A.TRCODE=3 THEN '3 Tediye'
-  WHEN A.TRCODE=4 THEN '4 Mahsup'
-  WHEN A.TRCODE=5 THEN '5 Özel'
-  WHEN A.TRCODE=6 THEN '6 Kur Farkı'
-  WHEN A.TRCODE=7 THEN '7 Kapanış'
-ELSE '' 
+    WHEN A.TRCODE=1 THEN '1 Açılış'
+    WHEN A.TRCODE=2 THEN '2 Tahsil'
+    WHEN A.TRCODE=3 THEN '3 Tediye'
+    WHEN A.TRCODE=4 THEN '4 Mahsup'
+    WHEN A.TRCODE=5 THEN '5 Özel'
+    WHEN A.TRCODE=6 THEN '6 Kur Farkı'
+    WHEN A.TRCODE=7 THEN '7 Kapanış'
+    ELSE '' 
 END as islem,
 CAST(C.NR AS CHAR(3))+' '+C.NAME as isYeri,
 CAST(D.NR AS CHAR(3))+' '+D.NAME as bolum,
@@ -1919,42 +2322,42 @@ F.CODE as hesapKodu,
 F.DEFINITION_ as hesapAdi,
 G.CODE+' '+G.DEFINITION_ as masrafMerkezi,
 CASE 
-  WHEN AA.MODULENR=1 THEN '1 Malzeme'
-  WHEN AA.MODULENR=2 THEN '2 Satınalma'
-  WHEN AA.MODULENR=3 THEN '3 Satış'
-  WHEN AA.MODULENR=4 THEN '4 Cari Hesap'
-  WHEN AA.MODULENR=5 THEN '5 Çek Senet'
-  WHEN AA.MODULENR=6 THEN '6 Banka'
-  WHEN AA.MODULENR=7 THEN '7 Kasa'
-ELSE '' 
+WHEN AA.MODULENR=1 THEN '1 Malzeme'
+    WHEN AA.MODULENR=2 THEN '2 Satınalma'
+    WHEN AA.MODULENR=3 THEN '3 Satış'
+    WHEN AA.MODULENR=4 THEN '4 Cari Hesap'
+    WHEN AA.MODULENR=5 THEN '5 Çek Senet'
+    WHEN AA.MODULENR=6 THEN '6 Banka'
+    WHEN AA.MODULENR=7 THEN '7 Kasa'
+    ELSE '' 
 END as kaynakModul,
 -CASE 
-  WHEN A.TRCURR=0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN
-  WHEN A.TRCURR<>0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN A.TRNET-A.TRNET*2*A.SIGN
-  WHEN A.TRCURR=0 AND A1.DISTRATE<>100 THEN A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN
-  WHEN A.TRCURR<>0 AND A1.DISTRATE<>100 THEN A1.TRNET-A1.TRNET*2*A.SIGN
-ELSE 0 
+    WHEN A.TRCURR=0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN
+    WHEN A.TRCURR<>0 AND (A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1) THEN A.TRNET-A.TRNET*2*A.SIGN
+    WHEN A.TRCURR=0 AND A1.DISTRATE<>100 THEN A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN
+    WHEN A.TRCURR<>0 AND A1.DISTRATE<>100 THEN A1.TRNET-A1.TRNET*2*A.SIGN
+    ELSE 0 
 END as tutar,
 CASE 
-  WHEN A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN 
-ELSE A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN 
+    WHEN A.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(A.DEBIT-A.CREDIT)-ABS(A.DEBIT-A.CREDIT)*2*A.SIGN 
+    ELSE A1.CREDEBNET-A1.CREDEBNET*2*A.SIGN 
 END as tutarYerel,
 A.LINEEXP as aciklama,
 AA.GENEXP1 as fisAciklama,
 CASE 
-  WHEN A.SIGN=0 THEN '0 Borç' 
-  WHEN A.SIGN=1 THEN '1 Alacak' 
-ELSE '' 
+    WHEN A.SIGN=0 THEN '0 Borç' 
+    WHEN A.SIGN=1 THEN '1 Alacak' 
+    ELSE '' 
 END as hareketYonu,
 CASE 
-  WHEN A.CANCELLED=0 THEN 'Hayır' 
-ELSE 'Evet' 
-END as iptal,
+    WHEN A.CANCELLED=0 THEN 'Hayır' 
+    ELSE 'Evet' 
+END  as iptal,
 CASE AA.DOCTYPE 
-  WHEN 0 THEN 'Normal' 
-  WHEN 1 THEN 'Cost Of Sales' 
-  WHEN 2 THEN 'Differences Of Cost Of Sales' 
-ELSE '' 
+    WHEN 0 THEN 'Normal' 
+    WHEN 1 THEN 'Cost Of Sales' 
+    WHEN 2 THEN 'Differences Of Cost Of Sales' 
+    ELSE '' 
 END as belgeTuru,
 A.CLDEF as cari, 
 A.TAXNR as cariVergiNo,
@@ -1965,29 +2368,47 @@ CL.SURNAME as soyadi,
 N2.DOCODE as faturaBelgeNo, 
 N2.FICHENO as faturaNo,
 CL.ADDR1 as adres1,
-CL.COUNTRY as ulke
+CL.COUNTRY as ulke,
+-1 * SEML.TOTAL as vergi
 FROM  LG_600_01_EMFLINE A WITH(NOLOCK)
-  LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=A.ACCFICHEREF
-  LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=A.LOGICALREF
-  LEFT JOIN L_CAPIDIV C WITH(NOLOCK) ON C.NR=A.BRANCH AND C.FIRMNR=600
-  LEFT JOIN L_CAPIDEPT D WITH(NOLOCK) ON D.NR=A.DEPARTMENT AND D.FIRMNR=600
-  LEFT JOIN LG_600_PROJECT E WITH(NOLOCK) ON E.LOGICALREF=A1.PROJECTREF
-  LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=A.ACCOUNTREF
-  LEFT JOIN LG_600_EMUHACC F1 WITH(NOLOCK) ON F1.CODE=left(F.CODE,3)
-  LEFT JOIN LG_600_EMCENTER G WITH(NOLOCK) ON G.LOGICALREF=A.CENTERREF
-  LEFT JOIN L_CURRENCYLIST H WITH(NOLOCK) ON H.CURTYPE=A.TRCURR AND H.FIRMNR=600
-  LEFT JOIN LG_EXCHANGE_600 I WITH(NOLOCK) ON I.EDATE=A.DATE_ AND I.CRTYPE=20
-  LEFT JOIN LG_600_01_INVOICE N1 WITH(NOLOCK) ON N1.LOGICALREF = A.SOURCEFREF
-  LEFT JOIN LG_600_01_INVOICE N2 WITH(NOLOCK) ON N2.ACCFICHEREF = AA.LOGICALREF
-  INNER JOIN LG_600_CLCARD CL WITH(NOLOCK)  ON CL.LOGICALREF = N2.CLIENTREF
-WHERE AA.CANCELLED = 0 
-  AND (F.CODE LIKE '360.10.01.003%' OR F.CODE LIKE '740.YÜ[PM]%' OR F.CODE LIKE '770.10.08.001')
-  AND AA.MODULENR=6
-  AND MONTH(A.DATE_)= %s
-  AND YEAR(A.DATE_)= %s
+    LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=A.ACCFICHEREF
+    LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=A.LOGICALREF
+    LEFT JOIN L_CAPIDIV C WITH(NOLOCK) ON C.NR=A.BRANCH AND C.FIRMNR=600
+    LEFT JOIN L_CAPIDEPT D WITH(NOLOCK) ON D.NR=A.DEPARTMENT AND D.FIRMNR=600
+    LEFT JOIN LG_600_PROJECT E WITH(NOLOCK) ON E.LOGICALREF=A1.PROJECTREF
+    LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=A.ACCOUNTREF
+    LEFT JOIN LG_600_EMUHACC F1 WITH(NOLOCK) ON F1.CODE=left(F.CODE,3)
+    LEFT JOIN LG_600_EMCENTER G WITH(NOLOCK) ON G.LOGICALREF=A.CENTERREF
+    LEFT JOIN L_CURRENCYLIST H WITH(NOLOCK) ON H.CURTYPE=A.TRCURR AND H.FIRMNR=600
+    LEFT JOIN LG_EXCHANGE_600 I WITH(NOLOCK) ON I.EDATE=A.DATE_ AND I.CRTYPE=20
+    LEFT JOIN LG_600_01_INVOICE N1 WITH(NOLOCK) ON N1.LOGICALREF = A.SOURCEFREF
+    LEFT JOIN LG_600_01_INVOICE N2 WITH(NOLOCK) ON N2.ACCFICHEREF = AA.LOGICALREF
+    INNER JOIN LG_600_CLCARD CL WITH(NOLOCK)  ON CL.LOGICALREF = N2.CLIENTREF
+    INNER JOIN (
+                SELECT
+                EML.ACCFICHEREF, 
+                CASE
+                    WHEN EML.LOGICALREF NOT IN (SELECT DISTINCT PREVLINEREF FROM LG_600_01_ACCDISTDETLN) OR A1.DISTRATE=1 THEN ABS(EML.DEBIT-EML.CREDIT)-ABS(EML.DEBIT-EML.CREDIT)*2*EML.SIGN 
+                    ELSE A1.CREDEBNET-A1.CREDEBNET*2*EML.SIGN 
+                END AS TOTAL
+                FROM  LG_600_01_EMFLINE EML WITH(NOLOCK)
+                    LEFT JOIN LG_600_01_EMFICHE AA WITH(NOLOCK) ON AA.LOGICALREF=EML.ACCFICHEREF
+                    LEFT JOIN LG_600_01_ACCDISTDETLN A1 WITH(NOLOCK) ON A1.PREVLINEREF=EML.LOGICALREF
+                    LEFT JOIN LG_600_EMUHACC F WITH(NOLOCK) ON F.LOGICALREF=EML.ACCOUNTREF
+                WHERE AA.CANCELLED = 0
+                    AND (F.CODE LIKE '360.10.01%')
+                    AND MONTH(EML.DATE_)= %s   
+                    AND YEAR(EML.DATE_)= %s          
+                    AND AA.MODULENR=6
+                ) SEML ON  SEML.ACCFICHEREF = A.ACCFICHEREF
+WHERE AA.CANCELLED = 0
+    AND (F.CODE LIKE '740.YÜ[PM]%' OR F.CODE LIKE '770.10.08.001')
+    AND MONTH(A.DATE_)= %s              
+    AND YEAR(A.DATE_)= %s                  
+    AND AA.MODULENR=6
 """
             
-            cursor.execute(query, (int(self.month), self.year, int(self.month), self.year, int(self.month), self.year))
+            cursor.execute(query, (int(self.month), self.year, int(self.month), self.year, int(self.month), self.year, int(self.month), self.year, int(self.month), self.year, int(self.month), self.year, int(self.month), self.year, int(self.month), self.year))
             
             # Sonuçları Odoo'ya kaydet
             records = []
@@ -2028,9 +2449,7 @@ WHERE AA.CANCELLED = 0
                     'ulke': row.get('ulke'),
                 }
                 records.append(self.env['logo.muhtasar.report'].create(vals))
-            
-            conn.close()
-            
+
             if records:
                 # Rapor görünümünü aç
                 return {
@@ -2051,7 +2470,13 @@ WHERE AA.CANCELLED = 0
                         'sticky': False,
                     }
                 }
-                
+
         except Exception as e:
             _logger.error("Muhtasar rapor hatası: %s", str(e))
             raise UserError(_("Rapor oluşturma hatası: %s") % str(e))
+        finally:
+            # Bağlantıyı kapat
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()

@@ -8,6 +8,7 @@
             <pivot string="E-Fatura Analizi">
                 <field name="issue_date" type="row" interval="month"/>
                 <field name="direction" type="col"/>
+                <field name="kaynak" type="col"/>
                 <field name="payable_amount" type="measure"/>
             </pivot>
         </field>
@@ -22,6 +23,7 @@
                 <field name="issue_date" interval="month"/>
                 <field name="payable_amount" type="measure"/>
                 <field name="direction" type="col"/>
+                <field name="kaynak" type="col"/>
             </graph>
         </field>
     </record>
@@ -32,14 +34,15 @@
         <field name="model">e.invoice.report</field>
         <field name="arch" type="xml">
             <list string="E-Fatura Raporu">
-                <field name="date"/>
-                <field name="direction"/>
-                <field name="sender"/>
-                <field name="receiver"/>
-                <field name="invoice_count" sum="Toplam"/>
-                <field name="total_amount" sum="Toplam Tutar"/>
-                <field name="avg_amount" avg="Ortalama"/>
-                <field name="status"/>
+                <field name="date" optional="show"/>
+                <field name="direction" optional="show"/>
+                <field name="kaynak" optional="show"/>
+                <field name="sender" optional="show"/>
+                <field name="receiver" optional="show"/>
+                <field name="invoice_count" sum="Toplam" optional="show"/>
+                <field name="total_amount" sum="Toplam Tutar" optional="show"/>
+                <field name="avg_amount" avg="Ortalama" optional="show"/>
+                <field name="status" optional="show"/>
             </list>
         </field>
     </record>
@@ -78,13 +81,14 @@
         <field name="model">e.invoice</field>
         <field name="arch" type="xml">
             <list string="Logo'da Bulunmayan Faturalar" default_order="direction, issue_date desc">
-                <field name="invoice_id" string="Fatura No"/>
-                <field name="direction" string="Yön"/>
-                <field name="issue_date" string="Tarih"/>
-                <field name="supplier" string="Tedarikçi"/>
-                <field name="customer" string="Müşteri"/>
-                <field name="tax_exclusive_total_amount" string="Vergisiz Tutar" sum="Toplam"/>
-                <field name="tax_inclusive_total_amount" string="Vergi Dahil Tutar" sum="Toplam"/>
+                <field name="invoice_id" string="Fatura No" optional="show"/>
+                <field name="direction" string="Yön" optional="show"/>
+                <field name="kaynak" string="Kaynak" optional="show"/>
+                <field name="issue_date" string="Tarih" optional="show"/>
+                <field name="supplier" string="Tedarikçi" optional="show"/>
+                <field name="customer" string="Müşteri" optional="show"/>
+                <field name="tax_exclusive_total_amount" string="Vergisiz Tutar" sum="Toplam" optional="show"/>
+                <field name="tax_inclusive_total_amount" string="Vergi Dahil Tutar" sum="Toplam" optional="show"/>
             </list>
         </field>
     </record>
