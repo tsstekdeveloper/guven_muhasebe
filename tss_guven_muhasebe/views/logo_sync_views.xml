@@ -298,9 +298,9 @@ if records:
                                 <field name="cron3_enabled"/>
                             </div>
                             <div class="o_setting_right_pane">
-                                <label for="cron3_enabled" string="Logo Monthly Sync (Aylık Periyotlar)"/>
+                                <label for="cron3_enabled" string="Logo Monthly Sync (7 Günlük Periyotlar)"/>
                                 <div class="text-muted">
-                                    Belirtilen tarih aralığında aylık periyotlarla Logo senkronizasyonu
+                                    Belirtilen tarih aralığında 7 günlük periyotlarla Logo senkronizasyonu
                                 </div>
                                 <div class="content-group" invisible="cron3_enabled == False">
                                     <div class="row mt8">
@@ -315,13 +315,13 @@ if records:
                                     </div>
                                     <div class="row mt8">
                                         <div class="col-6">
-                                            <label for="cron3_last_sync_month" string="Son Senkronize Ay"/>
-                                            <field name="cron3_last_sync_month" readonly="1" placeholder="YYYY-MM-DD"/>
+                                            <label for="cron3_last_sync_date" string="Son Senkronize Tarih"/>
+                                            <field name="cron3_last_sync_date" readonly="1" placeholder="YYYY-MM-DD"/>
                                         </div>
                                         <div class="col-6">
                                             <button name="action_reset_logo_monthly_sync" type="object"
                                                     string="Sıfırla" class="btn-secondary"
-                                                    help="Son senkronize ayı sıfırla ve baştan başla"/>
+                                                    help="Son senkronize tarihi sıfırla ve baştan başla"/>
                                         </div>
                                     </div>
                                     <div class="row mt8">
@@ -336,7 +336,7 @@ if records:
                                     </div>
                                     <div class="text-info mt8">
                                         <i class="fa fa-info-circle"/> 10 dakikada bir kontrol eder, sadece çalışma saatleri içinde işlem yapar.
-                                        Aylık periyotlarla Logo ile senkronizasyon yapar. Bitiş tarihine ulaştığında başlangıç tarihine döner.
+                                        7 günlük periyotlarla Logo ile senkronizasyon yapar. Bitiş tarihine ulaştığında başlangıç tarihine döner.
                                     </div>
                                 </div>
                             </div>

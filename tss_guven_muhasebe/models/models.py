@@ -523,23 +523,95 @@ class e_invoice(models.Model):
             # Otomatik Logo senkronizasyonu kontrolü
             config_param = self.env['ir.config_parameter'].sudo()
             logo_auto_sync = config_param.get_param('logo.auto_sync', False)
-            
+
             if logo_auto_sync and result.get('success'):
                 try:
-                    # Logo senkronizasyonu çalıştır
-                    logo_wizard = self.env['logo.sync.wizard'].create({
-                        'sync_mode': 'filtered',
-                        'date_filter': True,
-                        'date_from': start_date,
-                        'date_to': end_date,
-                        'direction_filter': direction,
-                    })
-                    
-                    logo_result = logo_wizard.action_sync_logo()
-                    result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik olarak çalıştırıldı.')
-                        
+                    if not pymssql:
+                        _logger.warning("Otomatik Logo Sync: pymssql yüklü değil")
+                        result['message'] += _('\n\nLogo Senkronizasyonu: pymssql eksik')
+                    else:
+                        # MSSQL config al
+                        server = config_param.get_param('logo.mssql_server')
+                        port = int(config_param.get_param('logo.mssql_port', '1433'))
+                        database = config_param.get_param('logo.mssql_database')
+                        username = config_param.get_param('logo.mssql_username')
+                        password = config_param.get_param('logo.mssql_password')
+                        table_name = config_param.get_param('logo.invoice_table', 'LG_600_01_INVOICE')
+
+                        if not all([server, database, username, password]):
+                            _logger.warning("Otomatik Logo Sync: MSSQL config eksik")
+                            result['message'] += _('\n\nLogo Senkronizasyonu: MSSQL config eksik')
+                        else:
+                            # Filtrelenmiş faturaları al
+                            domain = [
+                                ('issue_date', '>=', start_date),
+                                ('issue_date', '<=', end_date),
+                                ('direction', '=', direction),
+                                ('kaynak', 'in', ['e-fatura', 'e-arsiv'])
+                            ]
+                            invoices = self.search(domain)
+
+                            if invoices:
+                                # MSSQL bağlantısı
+                                conn = pymssql.connect(
+                                    server=server, port=port, user=username,
+                                    password=password, database=database,
+                                    timeout=30, login_timeout=30, charset='UTF-8'
+                                )
+                                cursor = conn.cursor()
+                                stats = {'found': 0, 'not_found': 0, 'errors': 0}
+
+                                # TRCODE belirle
+                                if direction == 'IN':
+                                    trcode_condition = "TRCODE IN (1,3,4,13)"
+                                else:  # OUT
+                                    trcode_condition = "TRCODE IN (6,7,8,9,14)"
+
+                                # Her faturayı kontrol et
+                                for invoice in invoices:
+                                    try:
+                                        # Tarih kontrolü için issue_date'i al
+                                        invoice_date = invoice.issue_date.strftime('%Y-%m-%d') if invoice.issue_date else None
+
+                                        if not invoice_date:
+                                            _logger.warning("Logo sync fatura %s: Tarih yok, atlanıyor", invoice.invoice_id)
+                                            continue
+
+                                        # Standart sorgu
+                                        query = """
+                                            SELECT LOGICALREF
+                                            FROM {}
+                                            WHERE (FICHENO = %s OR DOCODE = %s)
+                                            AND CANCELLED = 0
+                                            AND CAST(DATE_ AS DATE) = %s
+                                            AND {}
+                                        """.format(table_name, trcode_condition)
+
+                                        cursor.execute(query, (invoice.invoice_id, invoice.invoice_id, invoice_date))
+                                        logo_result = cursor.fetchone()
+
+                                        if logo_result:
+                                            invoice.write({
+                                                'exists_in_logo': True,
+                                                'logo_record_id': logo_result[0]
+                                            })
+                                            stats['found'] += 1
+                                        else:
+                                            invoice.write({'exists_in_logo': False})
+                                            stats['not_found'] += 1
+                                    except Exception as e:
+                                        stats['errors'] += 1
+                                        _logger.error("Logo sync fatura %s: %s", invoice.invoice_id, str(e))
+
+                                conn.close()
+                                result['message'] += _('\n\nLogo Sync: %d bulundu, %d bulunamadı') % (stats['found'], stats['not_found'])
+                            else:
+                                result['message'] += _('\n\nLogo Sync: Fatura bulunamadı')
+
                 except Exception as e:
-                    _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s", str(e))
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s\n%s", str(e), error_trace)
                     result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s') % str(e)
             
             return result
@@ -726,20 +798,89 @@ class e_invoice(models.Model):
 
             if logo_auto_sync and result.get('success'):
                 try:
-                    # Logo senkronizasyonu çalıştır
-                    logo_wizard = self.env['logo.sync.wizard'].create({
-                        'sync_mode': 'filtered',
-                        'date_filter': True,
-                        'date_from': start_date,
-                        'date_to': end_date,
-                        'direction_filter': 'OUT',  # E-Arşiv her zaman giden
-                    })
+                    if not pymssql:
+                        _logger.warning("Otomatik Logo Sync (E-Arşiv): pymssql yüklü değil")
+                        result['message'] += _('\n\nLogo Senkronizasyonu: pymssql eksik')
+                    else:
+                        # MSSQL config al
+                        server = soap_config.get_param('logo.mssql_server')
+                        port = int(soap_config.get_param('logo.mssql_port', '1433'))
+                        database = soap_config.get_param('logo.mssql_database')
+                        username = soap_config.get_param('logo.mssql_username')
+                        password = soap_config.get_param('logo.mssql_password')
+                        table_name = soap_config.get_param('logo.invoice_table', 'LG_600_01_INVOICE')
 
-                    logo_result = logo_wizard.action_sync_logo()
-                    result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik olarak çalıştırıldı.')
+                        if not all([server, database, username, password]):
+                            _logger.warning("Otomatik Logo Sync (E-Arşiv): MSSQL config eksik")
+                            result['message'] += _('\n\nLogo Senkronizasyonu: MSSQL config eksik')
+                        else:
+                            # E-Arşiv faturaları al (her zaman OUT yönü)
+                            domain = [
+                                ('issue_date', '>=', start_date),
+                                ('issue_date', '<=', end_date),
+                                ('direction', '=', 'OUT'),
+                                ('kaynak', '=', 'e-arsiv')
+                            ]
+                            invoices = self.search(domain)
+
+                            if invoices:
+                                # MSSQL bağlantısı
+                                conn = pymssql.connect(
+                                    server=server, port=port, user=username,
+                                    password=password, database=database,
+                                    timeout=30, login_timeout=30, charset='UTF-8'
+                                )
+                                cursor = conn.cursor()
+                                stats = {'found': 0, 'not_found': 0, 'errors': 0}
+
+                                # E-Arşiv her zaman OUT (giden)
+                                trcode_condition = "TRCODE IN (6,7,8,9,14)"
+
+                                # Her faturayı kontrol et
+                                for invoice in invoices:
+                                    try:
+                                        # Tarih kontrolü için issue_date'i al
+                                        invoice_date = invoice.issue_date.strftime('%Y-%m-%d') if invoice.issue_date else None
+
+                                        if not invoice_date:
+                                            _logger.warning("Logo sync E-Arşiv fatura %s: Tarih yok, atlanıyor", invoice.invoice_id)
+                                            continue
+
+                                        # Standart sorgu
+                                        query = """
+                                            SELECT LOGICALREF
+                                            FROM {}
+                                            WHERE (FICHENO = %s OR DOCODE = %s)
+                                            AND CANCELLED = 0
+                                            AND CAST(DATE_ AS DATE) = %s
+                                            AND {}
+                                        """.format(table_name, trcode_condition)
+
+                                        cursor.execute(query, (invoice.invoice_id, invoice.invoice_id, invoice_date))
+                                        logo_result = cursor.fetchone()
+
+                                        if logo_result:
+                                            invoice.write({
+                                                'exists_in_logo': True,
+                                                'logo_record_id': logo_result[0]
+                                            })
+                                            stats['found'] += 1
+                                        else:
+                                            invoice.write({'exists_in_logo': False})
+                                            stats['not_found'] += 1
+                                    except Exception as e:
+                                        stats['errors'] += 1
+                                        _logger.error("Logo sync E-Arşiv fatura %s: %s", invoice.invoice_id, str(e))
+
+                                conn.close()
+                                result['message'] += _('\n\nLogo Sync: %d bulundu, %d bulunamadı') % (stats['found'], stats['not_found'])
+                            else:
+                                result['message'] += _('\n\nLogo Sync: E-Arşiv fatura bulunamadı')
 
                 except Exception as e:
-                    _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s", str(e))
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s\n%s", str(e), error_trace)
                     result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s') % str(e)
 
             return result
@@ -897,7 +1038,15 @@ class e_invoice(models.Model):
     def _check_working_hours(self, start_hour, end_hour):
         """Çalışma saatleri içinde mi kontrol et"""
         from datetime import datetime
-        current_hour = datetime.now().hour
+        import pytz
+
+        # Istanbul timezone'ında current hour'ı al
+        istanbul_tz = pytz.timezone('Europe/Istanbul')
+        current_time_istanbul = datetime.now(istanbul_tz)
+        current_hour = current_time_istanbul.hour
+
+        _logger.info(f"Çalışma saati kontrolü - Istanbul saati: {current_hour}, Başlangıç: {start_hour}, Bitiş: {end_hour}")
+
         if start_hour <= end_hour:
             return start_hour <= current_hour <= end_hour
         else:  # Gece yarısını geçen durumlar (ör: 22-02)
@@ -989,10 +1138,11 @@ class e_invoice(models.Model):
             except Exception as e:
                 _logger.error("Progressive Sync - E-Arşiv hatası: %s", str(e))
 
-            # Son senkronize tarihi güncelle
-            ICPSudo.set_param('cron.progressive_last_sync_date', period_end.strftime('%Y-%m-%d'))
+            # Son senkronize tarihi güncelle (başlangıç tarihini kaydet, böylece +7 gün doğru çalışır)
+            ICPSudo.set_param('cron.progressive_last_sync_date', current_date.strftime('%Y-%m-%d'))
 
-            _logger.info("Progressive Sync tamamlandı. Sonraki tarih: %s", period_end)
+            _logger.info("Progressive Sync tamamlandı. Sync edildi: %s - %s, Sonraki başlangıç: %s",
+                        current_date, period_end, (current_date + timedelta(days=7)).strftime('%Y-%m-%d'))
 
         except Exception as e:
             _logger.error("Progressive Sync genel hatası: %s", str(e))
@@ -1064,8 +1214,10 @@ class e_invoice(models.Model):
 
     @api.model
     def cron_logo_monthly_sync(self):
-        """Logo Monthly Sync - Aylık periyotlarla Logo senkronizasyonu"""
+        """Logo Monthly Sync - 7 günlük periyotlarla Logo senkronizasyonu"""
         try:
+            from datetime import timedelta
+
             # Config parametrelerini al
             ICPSudo = self.env['ir.config_parameter'].sudo()
 
@@ -1084,7 +1236,7 @@ class e_invoice(models.Model):
             # Tarih parametrelerini al
             start_date_str = ICPSudo.get_param('cron.logo_monthly_start_date')
             end_date_str = ICPSudo.get_param('cron.logo_monthly_end_date')
-            last_sync_month_str = ICPSudo.get_param('cron.logo_monthly_last_sync_month')
+            last_sync_date_str = ICPSudo.get_param('cron.logo_monthly_last_sync_date')
 
             if not start_date_str or not end_date_str:
                 _logger.warning("Logo Monthly Sync: Başlangıç veya bitiş tarihi tanımlı değil")
@@ -1094,34 +1246,29 @@ class e_invoice(models.Model):
             start_date = fields.Date.from_string(start_date_str)
             end_date = fields.Date.from_string(end_date_str)
 
-            # Son senkronize ayı belirle
-            if last_sync_month_str:
-                current_month = fields.Date.from_string(last_sync_month_str)
-                # Bir sonraki ayın ilk gününe git
-                from dateutil.relativedelta import relativedelta
-                next_month = current_month + relativedelta(months=1)
-                next_month = next_month.replace(day=1)
+            # Son senkronize tarihi belirle
+            if last_sync_date_str:
+                current_date = fields.Date.from_string(last_sync_date_str)
+                # 7 gün ekle (bir sonraki periyoda geç)
+                current_date = current_date + timedelta(days=7)
 
                 # Bitiş tarihini geçtiyse başa dön
-                if next_month > end_date:
+                if current_date > end_date:
                     _logger.info("Logo Monthly Sync: Bitiş tarihine ulaşıldı, başa dönülüyor...")
-                    current_month = start_date.replace(day=1)
-                else:
-                    current_month = next_month
+                    current_date = start_date
             else:
-                current_month = start_date.replace(day=1)
+                current_date = start_date
 
-            # Ay sonu tarihini hesapla
-            from dateutil.relativedelta import relativedelta
-            month_end = (current_month + relativedelta(months=1)) - relativedelta(days=1)
-            month_end = min(month_end, end_date)
+            # 7 günlük periyot sonu hesapla
+            period_end = current_date + timedelta(days=6)
+            period_end = min(period_end, end_date)
 
-            _logger.info("Logo Monthly Sync başlatılıyor: %s - %s", current_month, month_end)
+            _logger.info("Logo Monthly Sync başlatılıyor: %s - %s", current_date, period_end)
 
-            # Bu ay için e_invoice kayıtlarını al
+            # Bu periyot için e_invoice kayıtlarını al
             domain = [
-                ('issue_date', '>=', current_month),
-                ('issue_date', '<=', month_end),
+                ('issue_date', '>=', current_date),
+                ('issue_date', '<=', period_end),
                 ('kaynak', 'in', ['e-fatura', 'e-arsiv'])
             ]
 
@@ -1130,24 +1277,110 @@ class e_invoice(models.Model):
             if invoices:
                 _logger.info("Logo Monthly Sync: %d fatura bulundu", len(invoices))
 
-                # Logo sync wizard'ı çalıştır
+                # Logo sync işlemini doğrudan yap (wizard kullanmadan)
                 try:
-                    logo_wizard = self.env['logo.sync.wizard'].create({
-                        'sync_mode': 'selected',
-                        'date_filter': False,
-                        'test_mode': False
-                    })
-                    logo_wizard.with_context(active_ids=invoices.ids).action_sync_logo()
-                    _logger.info("Logo Monthly Sync: Logo senkronizasyonu başarılı")
+                    # MSSQL bağlantısını test et
+                    if not pymssql:
+                        _logger.warning("Logo Monthly Sync: pymssql kütüphanesi yüklü değil, atlanıyor...")
+                    else:
+                        # Config parametrelerini al
+                        config_param = self.env['ir.config_parameter'].sudo()
+                        server = config_param.get_param('logo.mssql_server')
+                        port = int(config_param.get_param('logo.mssql_port', '1433'))
+                        database = config_param.get_param('logo.mssql_database')
+                        username = config_param.get_param('logo.mssql_username')
+                        password = config_param.get_param('logo.mssql_password')
+                        table_name = config_param.get_param('logo.invoice_table', 'LG_600_01_INVOICE')
+
+                        if not all([server, database, username, password]):
+                            _logger.warning("Logo Monthly Sync: MSSQL config eksik, atlanıyor...")
+                        else:
+                            # MSSQL bağlantısı aç
+                            conn = pymssql.connect(
+                                server=server,
+                                port=port,
+                                user=username,
+                                password=password,
+                                database=database,
+                                timeout=30,
+                                login_timeout=30,
+                                charset='UTF-8'
+                            )
+                            cursor = conn.cursor()
+
+                            # İstatistikler
+                            stats = {'found': 0, 'not_found': 0, 'updated': 0, 'errors': 0}
+
+                            # Her faturayı kontrol et
+                            for invoice in invoices:
+                                try:
+                                    # Direction'a göre TRCODE belirle
+                                    if invoice.direction == 'IN':
+                                        trcode_condition = "TRCODE IN (1,3,4,13)"
+                                    elif invoice.direction == 'OUT':
+                                        trcode_condition = "TRCODE IN (6,7,8,9,14)"
+                                    else:
+                                        continue
+
+                                    # Tarih kontrolü için issue_date'i al
+                                    invoice_date = invoice.issue_date.strftime('%Y-%m-%d') if invoice.issue_date else None
+
+                                    if not invoice_date:
+                                        _logger.warning("Logo Monthly Sync - Fatura %s: Tarih yok, atlanıyor", invoice.invoice_id)
+                                        continue
+
+                                    # Standart sorgu
+                                    query = """
+                                        SELECT LOGICALREF
+                                        FROM {}
+                                        WHERE (FICHENO = %s OR DOCODE = %s)
+                                        AND CANCELLED = 0
+                                        AND CAST(DATE_ AS DATE) = %s
+                                        AND {}
+                                    """.format(table_name, trcode_condition)
+
+                                    cursor.execute(query, (invoice.invoice_id, invoice.invoice_id, invoice_date))
+                                    result = cursor.fetchone()
+
+                                    if result:
+                                        # Logo'da bulundu
+                                        invoice.write({
+                                            'exists_in_logo': True,
+                                            'logo_record_id': result[0],
+                                            'notes': (invoice.notes or '') + f'\n[Logo Sync] Bulundu: LOGICALREF={result[0]}'
+                                        })
+                                        stats['found'] += 1
+                                    else:
+                                        # Logo'da bulunamadı
+                                        invoice.write({
+                                            'exists_in_logo': False,
+                                            'logo_record_id': False,
+                                            'notes': (invoice.notes or '') + f'\n[Logo Sync] Bulunamadı'
+                                        })
+                                        stats['not_found'] += 1
+
+                                    stats['updated'] += 1
+
+                                except Exception as e:
+                                    stats['errors'] += 1
+                                    _logger.error("Logo Monthly Sync - Fatura %s hatası: %s", invoice.invoice_id, str(e))
+
+                            conn.close()
+                            _logger.info("Logo Monthly Sync tamamlandı: %d bulundu, %d bulunamadı, %d hata",
+                                        stats['found'], stats['not_found'], stats['errors'])
+
                 except Exception as e:
-                    _logger.error("Logo Monthly Sync: Logo senkronizasyonu hatası: %s", str(e))
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    _logger.error("Logo Monthly Sync: Logo senkronizasyonu hatası: %s\n%s", str(e), error_trace)
             else:
                 _logger.info("Logo Monthly Sync: Bu dönemde fatura bulunamadı")
 
-            # Son senkronize ayı güncelle
-            ICPSudo.set_param('cron.logo_monthly_last_sync_month', month_end.strftime('%Y-%m-%d'))
+            # Son senkronize tarihi güncelle (başlangıç tarihini kaydediyoruz, end değil)
+            ICPSudo.set_param('cron.logo_monthly_last_sync_date', current_date.strftime('%Y-%m-%d'))
 
-            _logger.info("Logo Monthly Sync tamamlandı. Sonraki ay: %s", month_end)
+            _logger.info("Logo Monthly Sync tamamlandı. Sync edildi: %s - %s, Sonraki başlangıç: %s",
+                        current_date, period_end, (current_date + timedelta(days=7)).strftime('%Y-%m-%d'))
 
         except Exception as e:
             _logger.error("Logo Monthly Sync genel hatası: %s", str(e))
@@ -1969,11 +2202,11 @@ class EInvoiceConfigSettings(models.TransientModel):
         help="0-23 arası saat (örn: 20 = 20:00)"
     )
 
-    # Cron 3: Logo Monthly Sync (Aylık Periyotlar)
+    # Cron 3: Logo Monthly Sync (7 Günlük Periyotlar)
     cron3_enabled = fields.Boolean(
         string='Logo Monthly Sync Aktif',
         config_parameter='cron.logo_monthly_sync_enabled',
-        help="Aylık periyotlarla Logo senkronizasyonu"
+        help="7 günlük periyotlarla Logo senkronizasyonu"
     )
     cron3_start_date = fields.Char(
         string='Başlangıç Tarihi',
@@ -1985,9 +2218,9 @@ class EInvoiceConfigSettings(models.TransientModel):
         config_parameter='cron.logo_monthly_end_date',
         help="YYYY-MM-DD formatında tarih girin"
     )
-    cron3_last_sync_month = fields.Char(
-        string='Son Senkronize Ay',
-        config_parameter='cron.logo_monthly_last_sync_month',
+    cron3_last_sync_date = fields.Char(
+        string='Son Senkronize Tarih',
+        config_parameter='cron.logo_monthly_last_sync_date',
         readonly=True
     )
     cron3_start_hour = fields.Integer(
@@ -2101,6 +2334,10 @@ class EInvoiceConfigSettings(models.TransientModel):
         """Progressive sync last_sync_date'i sıfırla"""
         ICPSudo = self.env['ir.config_parameter'].sudo()
         ICPSudo.set_param('cron.progressive_last_sync_date', False)
+
+        # Form alanını da güncelle
+        self.cron1_last_sync_date = False
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -2109,21 +2346,27 @@ class EInvoiceConfigSettings(models.TransientModel):
                 'message': _('Son senkronize tarih sıfırlandı. Bir sonraki çalışmada başlangıç tarihinden başlayacak.'),
                 'type': 'success',
                 'sticky': False,
+                'next': {'type': 'ir.actions.act_window_close'},
             }
         }
 
     def action_reset_logo_monthly_sync(self):
-        """Logo monthly sync last_sync_month'u sıfırla"""
+        """Logo monthly sync last_sync_date'i sıfırla"""
         ICPSudo = self.env['ir.config_parameter'].sudo()
-        ICPSudo.set_param('cron.logo_monthly_last_sync_month', False)
+        ICPSudo.set_param('cron.logo_monthly_last_sync_date', False)
+
+        # Form alanını da güncelle
+        self.cron3_last_sync_date = False
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': _('Logo Monthly Sync Sıfırlandı'),
-                'message': _('Son senkronize ay sıfırlandı. Bir sonraki çalışmada başlangıç tarihinden başlayacak.'),
+                'message': _('Son senkronize tarih sıfırlandı. Bir sonraki çalışmada başlangıç tarihinden başlayacak.'),
                 'type': 'success',
                 'sticky': False,
+                'next': {'type': 'ir.actions.act_window_close'},
             }
         }
 
