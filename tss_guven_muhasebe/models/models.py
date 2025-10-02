@@ -892,46 +892,265 @@ class e_invoice(models.Model):
             _logger.error("SOAP bağlantı test hatası: %s", str(e))
             raise e
 
+    # Cron Job Metodları
     @api.model
-    def cron_daily_sync(self):
-        """Günlük cron job için senkronizasyon metodu"""
-        try:
-            # Dünkü tarihi al
-            yesterday = fields.Date.subtract(fields.Date.today(), days=1)
-            yesterday_str = yesterday.strftime('%Y-%m-%d')
-            
-            _logger.info("Günlük senkronizasyon başlatılıyor: %s", yesterday_str)
-            
-            # Gelen ve giden faturaları senkronize et
-            result_in = self.sync_invoices_from_soap(yesterday_str, yesterday_str, 'IN')
-            result_out = self.sync_invoices_from_soap(yesterday_str, yesterday_str, 'OUT')
-            
-            _logger.info("Günlük senkronizasyon tamamlandı. IN: %s, OUT: %s", result_in, result_out)
-            
-        except Exception as e:
-            _logger.error("Günlük senkronizasyon hatası: %s", str(e))
+    def _check_working_hours(self, start_hour, end_hour):
+        """Çalışma saatleri içinde mi kontrol et"""
+        from datetime import datetime
+        current_hour = datetime.now().hour
+        if start_hour <= end_hour:
+            return start_hour <= current_hour <= end_hour
+        else:  # Gece yarısını geçen durumlar (ör: 22-02)
+            return current_hour >= start_hour or current_hour <= end_hour
 
     @api.model
-    def cron_weekly_sync(self):
-        """Haftalık cron job için senkronizasyon metodu"""
+    def cron_progressive_sync(self):
+        """Progressive Sync - 7 günlük periyotlarla e-fatura ve e-arşiv senkronizasyonu"""
         try:
-            # Son 7 günü al
-            end_date = fields.Date.today()
-            start_date = fields.Date.subtract(end_date, days=7)
-            
-            end_date_str = end_date.strftime('%Y-%m-%d')
-            start_date_str = start_date.strftime('%Y-%m-%d')
-            
-            _logger.info("Haftalık senkronizasyon başlatılıyor: %s - %s", start_date_str, end_date_str)
-            
-            # Gelen ve giden faturaları senkronize et
-            result_in = self.sync_invoices_from_soap(start_date_str, end_date_str, 'IN')
-            result_out = self.sync_invoices_from_soap(start_date_str, end_date_str, 'OUT')
-            
-            _logger.info("Haftalık senkronizasyon tamamlandı. IN: %s, OUT: %s", result_in, result_out)
-            
+            # Config parametrelerini al
+            ICPSudo = self.env['ir.config_parameter'].sudo()
+
+            # Enabled kontrolü
+            enabled = ICPSudo.get_param('cron.progressive_sync_enabled', 'False') == 'True'
+            if not enabled:
+                return
+
+            # Saat kontrolü
+            start_hour = int(ICPSudo.get_param('cron.progressive_start_hour', '8'))
+            end_hour = int(ICPSudo.get_param('cron.progressive_end_hour', '20'))
+            if not self._check_working_hours(start_hour, end_hour):
+                _logger.info("Progressive Sync: Çalışma saatleri dışında, atlanıyor...")
+                return
+
+            # Tarih parametrelerini al
+            start_date_str = ICPSudo.get_param('cron.progressive_start_date')
+            end_date_str = ICPSudo.get_param('cron.progressive_end_date')
+            last_sync_date_str = ICPSudo.get_param('cron.progressive_last_sync_date')
+
+            if not start_date_str or not end_date_str:
+                _logger.warning("Progressive Sync: Başlangıç veya bitiş tarihi tanımlı değil")
+                return
+
+            # String'leri date objesine çevir
+            start_date = fields.Date.from_string(start_date_str)
+            end_date = fields.Date.from_string(end_date_str)
+
+            # Son senkronize tarihi belirle
+            if last_sync_date_str:
+                current_date = fields.Date.from_string(last_sync_date_str)
+                # 7 gün ekle
+                from datetime import timedelta
+                next_date = current_date + timedelta(days=7)
+
+                # Bitiş tarihini geçtiyse başa dön
+                if next_date > end_date:
+                    _logger.info("Progressive Sync: Bitiş tarihine ulaşıldı, başa dönülüyor...")
+                    current_date = start_date
+                else:
+                    current_date = next_date
+            else:
+                current_date = start_date
+
+            # 7 günlük periyodu hesapla
+            from datetime import timedelta
+            period_end = min(current_date + timedelta(days=6), end_date)
+
+            _logger.info("Progressive Sync başlatılıyor: %s - %s", current_date, period_end)
+
+            # E-Fatura Gelen senkronizasyonu
+            try:
+                result_in = self.sync_invoices_from_soap(
+                    current_date.strftime('%Y-%m-%d'),
+                    period_end.strftime('%Y-%m-%d'),
+                    'IN'
+                )
+                _logger.info("Progressive Sync - E-Fatura Gelen: %s", result_in)
+            except Exception as e:
+                _logger.error("Progressive Sync - E-Fatura Gelen hatası: %s", str(e))
+
+            # E-Fatura Giden senkronizasyonu
+            try:
+                result_out = self.sync_invoices_from_soap(
+                    current_date.strftime('%Y-%m-%d'),
+                    period_end.strftime('%Y-%m-%d'),
+                    'OUT'
+                )
+                _logger.info("Progressive Sync - E-Fatura Giden: %s", result_out)
+            except Exception as e:
+                _logger.error("Progressive Sync - E-Fatura Giden hatası: %s", str(e))
+
+            # E-Arşiv senkronizasyonu
+            try:
+                result_earsiv = self.sync_earsiv_from_soap(
+                    current_date.strftime('%Y-%m-%d'),
+                    period_end.strftime('%Y-%m-%d')
+                )
+                _logger.info("Progressive Sync - E-Arşiv: %s", result_earsiv)
+            except Exception as e:
+                _logger.error("Progressive Sync - E-Arşiv hatası: %s", str(e))
+
+            # Son senkronize tarihi güncelle
+            ICPSudo.set_param('cron.progressive_last_sync_date', period_end.strftime('%Y-%m-%d'))
+
+            _logger.info("Progressive Sync tamamlandı. Sonraki tarih: %s", period_end)
+
         except Exception as e:
-            _logger.error("Haftalık senkronizasyon hatası: %s", str(e))
+            _logger.error("Progressive Sync genel hatası: %s", str(e))
+
+    @api.model
+    def cron_retrospective_sync(self):
+        """Retrospective Sync - X gün önceki tarihin faturalarını senkronize et"""
+        try:
+            # Config parametrelerini al
+            ICPSudo = self.env['ir.config_parameter'].sudo()
+
+            # Enabled kontrolü
+            enabled = ICPSudo.get_param('cron.retrospective_sync_enabled', 'False') == 'True'
+            if not enabled:
+                return
+
+            # Saat kontrolü
+            start_hour = int(ICPSudo.get_param('cron.retrospective_start_hour', '8'))
+            end_hour = int(ICPSudo.get_param('cron.retrospective_end_hour', '20'))
+            if not self._check_working_hours(start_hour, end_hour):
+                _logger.info("Retrospective Sync: Çalışma saatleri dışında, atlanıyor...")
+                return
+
+            # Kaç gün önce parametresi
+            days_ago = int(ICPSudo.get_param('cron.retrospective_days_ago', '3'))
+
+            # Hedef tarihi hesapla
+            target_date = fields.Date.subtract(fields.Date.today(), days=days_ago)
+            target_date_str = target_date.strftime('%Y-%m-%d')
+
+            _logger.info("Retrospective Sync başlatılıyor: %s (%d gün önce)", target_date_str, days_ago)
+
+            # E-Fatura Gelen senkronizasyonu
+            try:
+                result_in = self.sync_invoices_from_soap(
+                    target_date_str,
+                    target_date_str,
+                    'IN'
+                )
+                _logger.info("Retrospective Sync - E-Fatura Gelen: %s", result_in)
+            except Exception as e:
+                _logger.error("Retrospective Sync - E-Fatura Gelen hatası: %s", str(e))
+
+            # E-Fatura Giden senkronizasyonu
+            try:
+                result_out = self.sync_invoices_from_soap(
+                    target_date_str,
+                    target_date_str,
+                    'OUT'
+                )
+                _logger.info("Retrospective Sync - E-Fatura Giden: %s", result_out)
+            except Exception as e:
+                _logger.error("Retrospective Sync - E-Fatura Giden hatası: %s", str(e))
+
+            # E-Arşiv senkronizasyonu
+            try:
+                result_earsiv = self.sync_earsiv_from_soap(
+                    target_date_str,
+                    target_date_str
+                )
+                _logger.info("Retrospective Sync - E-Arşiv: %s", result_earsiv)
+            except Exception as e:
+                _logger.error("Retrospective Sync - E-Arşiv hatası: %s", str(e))
+
+            _logger.info("Retrospective Sync tamamlandı: %s", target_date_str)
+
+        except Exception as e:
+            _logger.error("Retrospective Sync genel hatası: %s", str(e))
+
+    @api.model
+    def cron_logo_monthly_sync(self):
+        """Logo Monthly Sync - Aylık periyotlarla Logo senkronizasyonu"""
+        try:
+            # Config parametrelerini al
+            ICPSudo = self.env['ir.config_parameter'].sudo()
+
+            # Enabled kontrolü
+            enabled = ICPSudo.get_param('cron.logo_monthly_sync_enabled', 'False') == 'True'
+            if not enabled:
+                return
+
+            # Saat kontrolü
+            start_hour = int(ICPSudo.get_param('cron.logo_monthly_start_hour', '8'))
+            end_hour = int(ICPSudo.get_param('cron.logo_monthly_end_hour', '20'))
+            if not self._check_working_hours(start_hour, end_hour):
+                _logger.info("Logo Monthly Sync: Çalışma saatleri dışında, atlanıyor...")
+                return
+
+            # Tarih parametrelerini al
+            start_date_str = ICPSudo.get_param('cron.logo_monthly_start_date')
+            end_date_str = ICPSudo.get_param('cron.logo_monthly_end_date')
+            last_sync_month_str = ICPSudo.get_param('cron.logo_monthly_last_sync_month')
+
+            if not start_date_str or not end_date_str:
+                _logger.warning("Logo Monthly Sync: Başlangıç veya bitiş tarihi tanımlı değil")
+                return
+
+            # String'leri date objesine çevir
+            start_date = fields.Date.from_string(start_date_str)
+            end_date = fields.Date.from_string(end_date_str)
+
+            # Son senkronize ayı belirle
+            if last_sync_month_str:
+                current_month = fields.Date.from_string(last_sync_month_str)
+                # Bir sonraki ayın ilk gününe git
+                from dateutil.relativedelta import relativedelta
+                next_month = current_month + relativedelta(months=1)
+                next_month = next_month.replace(day=1)
+
+                # Bitiş tarihini geçtiyse başa dön
+                if next_month > end_date:
+                    _logger.info("Logo Monthly Sync: Bitiş tarihine ulaşıldı, başa dönülüyor...")
+                    current_month = start_date.replace(day=1)
+                else:
+                    current_month = next_month
+            else:
+                current_month = start_date.replace(day=1)
+
+            # Ay sonu tarihini hesapla
+            from dateutil.relativedelta import relativedelta
+            month_end = (current_month + relativedelta(months=1)) - relativedelta(days=1)
+            month_end = min(month_end, end_date)
+
+            _logger.info("Logo Monthly Sync başlatılıyor: %s - %s", current_month, month_end)
+
+            # Bu ay için e_invoice kayıtlarını al
+            domain = [
+                ('issue_date', '>=', current_month),
+                ('issue_date', '<=', month_end),
+                ('kaynak', 'in', ['e-fatura', 'e-arsiv'])
+            ]
+
+            invoices = self.search(domain)
+
+            if invoices:
+                _logger.info("Logo Monthly Sync: %d fatura bulundu", len(invoices))
+
+                # Logo sync wizard'ı çalıştır
+                try:
+                    logo_wizard = self.env['logo.sync.wizard'].create({
+                        'sync_mode': 'selected',
+                        'date_filter': False,
+                        'test_mode': False
+                    })
+                    logo_wizard.with_context(active_ids=invoices.ids).action_sync_logo()
+                    _logger.info("Logo Monthly Sync: Logo senkronizasyonu başarılı")
+                except Exception as e:
+                    _logger.error("Logo Monthly Sync: Logo senkronizasyonu hatası: %s", str(e))
+            else:
+                _logger.info("Logo Monthly Sync: Bu dönemde fatura bulunamadı")
+
+            # Son senkronize ayı güncelle
+            ICPSudo.set_param('cron.logo_monthly_last_sync_month', month_end.strftime('%Y-%m-%d'))
+
+            _logger.info("Logo Monthly Sync tamamlandı. Sonraki ay: %s", month_end)
+
+        except Exception as e:
+            _logger.error("Logo Monthly Sync genel hatası: %s", str(e))
 
     # Dashboard için metodlar
     @api.model
@@ -1352,13 +1571,13 @@ class LogoSyncWizard(models.TransientModel):
         
         return self.env['e.invoice'].search(domain)
 
-    def _check_invoice_in_logo(self, cursor, invoice_id, direction):
+    def _check_invoice_in_logo(self, cursor, invoice_id, direction, invoice_date):
         """Tek bir faturanın Logo'daki durumunu kontrol et"""
         try:
             # Config'den tablo adını al
             config_param = self.env['ir.config_parameter'].sudo()
             table_name = config_param.get_param('logo.invoice_table', 'LG_600_01_INVOICE')
-            
+
             # Direction'a göre TRCODE değerlerini belirle
             if direction == 'IN':
                 trcode_condition = "TRCODE IN (1,3,4,13)"
@@ -1370,17 +1589,33 @@ class LogoSyncWizard(models.TransientModel):
                     'logo_record_id': None,
                     'note': _('Geçersiz direction değeri: %s') % direction
                 }
-            
-            # SQL sorgusu
+
+            # Datetime'ı sadece tarih kısmına çevir (saat bilgisini kaldır)
+            # invoice_date datetime ise date'e çevir, yoksa olduğu gibi kullan
+            if invoice_date:
+                if isinstance(invoice_date, datetime):
+                    date_only = invoice_date.date()
+                else:
+                    date_only = invoice_date
+            else:
+                # Tarih yoksa sorguyu yapma
+                return {
+                    'exists': False,
+                    'logo_record_id': None,
+                    'note': _('Fatura tarihi bulunamadı')
+                }
+
+            # SQL sorgusu - CAST ile datetime'ı date'e çeviriyoruz
             query = """
-                SELECT LOGICALREF 
+                SELECT LOGICALREF
                 FROM {}
                 WHERE (FICHENO = %s OR DOCODE = %s)
-                AND CANCELLED = 0 
+                AND CANCELLED = 0
+                AND CAST(DATE_ AS DATE) = %s
                 AND {}
             """.format(table_name, trcode_condition)
 
-            cursor.execute(query, (invoice_id, invoice_id))
+            cursor.execute(query, (invoice_id, invoice_id, date_only))
             results = cursor.fetchall()
             
             if len(results) == 0:
@@ -1453,9 +1688,10 @@ class LogoSyncWizard(models.TransientModel):
                 try:
                     # Logo'da kontrol et
                     logo_result = self._check_invoice_in_logo(
-                        cursor, 
-                        invoice.invoice_id, 
-                        invoice.direction
+                        cursor,
+                        invoice.invoice_id,
+                        invoice.direction,
+                        invoice.issue_date
                     )
                     
                     # Mevcut notları koru
@@ -1541,14 +1777,16 @@ class LogoSyncWizard(models.TransientModel):
             
             for invoice in test_invoices:
                 logo_result = self._check_invoice_in_logo(
-                    cursor, 
-                    invoice.invoice_id, 
-                    invoice.direction
+                    cursor,
+                    invoice.invoice_id,
+                    invoice.direction,
+                    invoice.issue_date
                 )
-                
+
                 test_results.append({
                     'invoice_id': invoice.invoice_id,
                     'direction': invoice.direction,
+                    'issue_date': invoice.issue_date,
                     'exists': logo_result['exists'],
                     'logo_id': logo_result['logo_record_id'],
                     'note': logo_result['note']
@@ -1626,15 +1864,6 @@ class EInvoiceConfigSettings(models.TransientModel):
         string='E-Fatura Şifre',
         config_parameter='efatura.password'
     )
-    efatura_auto_sync = fields.Boolean(
-        string='Otomatik Senkronizasyon',
-        config_parameter='efatura.auto_sync'
-    )
-    efatura_sync_interval = fields.Selection([
-        ('daily', 'Günlük'),
-        ('weekly', 'Haftalık'),
-        ('monthly', 'Aylık')
-    ], string='Senkronizasyon Sıklığı', config_parameter='efatura.sync_interval', default='daily')
     efatura_earsiv_ws = fields.Char(
         string='E-Arşiv WS URL',
         config_parameter='efatura.earsiv_ws',
@@ -1680,7 +1909,100 @@ class EInvoiceConfigSettings(models.TransientModel):
         config_parameter='logo.auto_sync',
         help="E-fatura senkronizasyonu sonrası otomatik olarak Logo senkronizasyonu çalıştır"
     )
-    
+
+    # Cron 1: Progressive Sync (7 Günlük Periyot)
+    cron1_enabled = fields.Boolean(
+        string='Progressive Sync Aktif',
+        config_parameter='cron.progressive_sync_enabled',
+        help="7 günlük periyotlarla e-fatura ve e-arşiv senkronizasyonu"
+    )
+    cron1_start_date = fields.Char(
+        string='Başlangıç Tarihi',
+        config_parameter='cron.progressive_start_date',
+        help="YYYY-MM-DD formatında tarih girin"
+    )
+    cron1_end_date = fields.Char(
+        string='Bitiş Tarihi',
+        config_parameter='cron.progressive_end_date',
+        help="YYYY-MM-DD formatında tarih girin"
+    )
+    cron1_last_sync_date = fields.Char(
+        string='Son Senkronize Tarih',
+        config_parameter='cron.progressive_last_sync_date',
+        readonly=True
+    )
+    cron1_start_hour = fields.Integer(
+        string='Başlangıç Saati',
+        config_parameter='cron.progressive_start_hour',
+        default=8,
+        help="0-23 arası saat (örn: 8 = 08:00)"
+    )
+    cron1_end_hour = fields.Integer(
+        string='Bitiş Saati',
+        config_parameter='cron.progressive_end_hour',
+        default=20,
+        help="0-23 arası saat (örn: 20 = 20:00)"
+    )
+
+    # Cron 2: Retrospective Daily Sync (X Gün Önce)
+    cron2_enabled = fields.Boolean(
+        string='Retrospective Sync Aktif',
+        config_parameter='cron.retrospective_sync_enabled',
+        help="Belirtilen gün sayısı kadar önceki günün faturalarını senkronize et"
+    )
+    cron2_days_ago = fields.Integer(
+        string='Kaç Gün Önce',
+        config_parameter='cron.retrospective_days_ago',
+        default=3,
+        help="Bugünden kaç gün öncesinin faturalarını çekecek"
+    )
+    cron2_start_hour = fields.Integer(
+        string='Başlangıç Saati',
+        config_parameter='cron.retrospective_start_hour',
+        default=8,
+        help="0-23 arası saat (örn: 8 = 08:00)"
+    )
+    cron2_end_hour = fields.Integer(
+        string='Bitiş Saati',
+        config_parameter='cron.retrospective_end_hour',
+        default=20,
+        help="0-23 arası saat (örn: 20 = 20:00)"
+    )
+
+    # Cron 3: Logo Monthly Sync (Aylık Periyotlar)
+    cron3_enabled = fields.Boolean(
+        string='Logo Monthly Sync Aktif',
+        config_parameter='cron.logo_monthly_sync_enabled',
+        help="Aylık periyotlarla Logo senkronizasyonu"
+    )
+    cron3_start_date = fields.Char(
+        string='Başlangıç Tarihi',
+        config_parameter='cron.logo_monthly_start_date',
+        help="YYYY-MM-DD formatında tarih girin"
+    )
+    cron3_end_date = fields.Char(
+        string='Bitiş Tarihi',
+        config_parameter='cron.logo_monthly_end_date',
+        help="YYYY-MM-DD formatında tarih girin"
+    )
+    cron3_last_sync_month = fields.Char(
+        string='Son Senkronize Ay',
+        config_parameter='cron.logo_monthly_last_sync_month',
+        readonly=True
+    )
+    cron3_start_hour = fields.Integer(
+        string='Başlangıç Saati',
+        config_parameter='cron.logo_monthly_start_hour',
+        default=8,
+        help="0-23 arası saat (örn: 8 = 08:00)"
+    )
+    cron3_end_hour = fields.Integer(
+        string='Bitiş Saati',
+        config_parameter='cron.logo_monthly_end_hour',
+        default=20,
+        help="0-23 arası saat (örn: 20 = 20:00)"
+    )
+
     @api.model
     def get_values(self):
         res = super(EInvoiceConfigSettings, self).get_values()
@@ -1696,8 +2018,6 @@ class EInvoiceConfigSettings(models.TransientModel):
             # E-Fatura ayarları
             efatura_username=ICPSudo.get_param('efatura.username', ''),
             efatura_password=ICPSudo.get_param('efatura.password', ''),
-            efatura_auto_sync=str_to_bool(ICPSudo.get_param('efatura.auto_sync', 'False')),  # ✅ Düzeltildi
-            efatura_sync_interval=ICPSudo.get_param('efatura.sync_interval', 'daily'),
             efatura_earsiv_ws=ICPSudo.get_param('efatura.earsiv_ws',
                 'https://earsivws.izibiz.com.tr/EIArchiveWS/EFaturaArchive?wsdl'),
 
@@ -1719,8 +2039,6 @@ class EInvoiceConfigSettings(models.TransientModel):
         # E-Fatura ayarları
         ICPSudo.set_param('efatura.username', self.efatura_username or '')
         ICPSudo.set_param('efatura.password', self.efatura_password or '')
-        ICPSudo.set_param('efatura.auto_sync', str(self.efatura_auto_sync))  # ✅ String'e çevir
-        ICPSudo.set_param('efatura.sync_interval', self.efatura_sync_interval)
         ICPSudo.set_param('efatura.earsiv_ws', self.efatura_earsiv_ws or
             'https://earsivws.izibiz.com.tr/EIArchiveWS/EFaturaArchive?wsdl')
         
@@ -1732,30 +2050,7 @@ class EInvoiceConfigSettings(models.TransientModel):
         ICPSudo.set_param('logo.mssql_password', self.logo_mssql_password or '')
         ICPSudo.set_param('logo.invoice_table', self.logo_invoice_table or 'LG_600_01_INVOICE')  # ✅ Eksik satır eklendi
         ICPSudo.set_param('logo.auto_sync', str(self.logo_auto_sync))  # ✅ String'e çevir
-    
-        
-        # Cron job'ı güncelle
-        self._update_cron_job()
-    
-    def _update_cron_job(self):
-        """Otomatik senkronizasyon ayarlarına göre cron job'ı güncelle"""
-        cron = self.env.ref('tss_guven_muhasebe.ir_cron_efatura_sync_daily', raise_if_not_found=False)
-        if cron:
-            if self.efatura_auto_sync:
-                interval_mapping = {
-                    'daily': {'interval_number': 1, 'interval_type': 'days'},
-                    'weekly': {'interval_number': 1, 'interval_type': 'weeks'},
-                    'monthly': {'interval_number': 1, 'interval_type': 'months'},
-                }
-                settings = interval_mapping.get(self.efatura_sync_interval, interval_mapping['daily'])
-                cron.write({
-                    'active': True,
-                    'interval_number': settings['interval_number'],
-                    'interval_type': settings['interval_type']
-                })
-            else:
-                cron.active = False
-    
+
     def action_test_efatura_connection(self):
         """E-Fatura SOAP servisi bağlantısını test et"""
         try:
@@ -1789,7 +2084,7 @@ class EInvoiceConfigSettings(models.TransientModel):
             # Geçici wizard oluştur ve bağlantı test et
             wizard = self.env['logo.sync.wizard'].create({})
             return wizard.action_test_connection()
-            
+
         except Exception as e:
             return {
                 'type': 'ir.actions.client',
@@ -1801,6 +2096,36 @@ class EInvoiceConfigSettings(models.TransientModel):
                     'sticky': True,
                 }
             }
+
+    def action_reset_progressive_sync(self):
+        """Progressive sync last_sync_date'i sıfırla"""
+        ICPSudo = self.env['ir.config_parameter'].sudo()
+        ICPSudo.set_param('cron.progressive_last_sync_date', False)
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Progressive Sync Sıfırlandı'),
+                'message': _('Son senkronize tarih sıfırlandı. Bir sonraki çalışmada başlangıç tarihinden başlayacak.'),
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+
+    def action_reset_logo_monthly_sync(self):
+        """Logo monthly sync last_sync_month'u sıfırla"""
+        ICPSudo = self.env['ir.config_parameter'].sudo()
+        ICPSudo.set_param('cron.logo_monthly_last_sync_month', False)
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Logo Monthly Sync Sıfırlandı'),
+                'message': _('Son senkronize ay sıfırlandı. Bir sonraki çalışmada başlangıç tarihinden başlayacak.'),
+                'type': 'success',
+                'sticky': False,
+            }
+        }
 
 
 class LogoKdv2Report(models.TransientModel):
@@ -2485,3 +2810,285 @@ WHERE AA.CANCELLED = 0
                 cursor.close()
             if conn:
                 conn.close()
+
+
+class EarsivExcelImportWizard(models.TransientModel):
+    _name = 'earsiv.excel.import.wizard'
+    _description = 'E-Arşiv Gelen Excel Import Wizard'
+
+    # Dosya yükleme alanı
+    file_data = fields.Binary('Excel Dosyası', required=True)
+    file_name = fields.Char('Dosya Adı')
+
+    # Import özeti
+    import_summary = fields.Html('Import Özeti', readonly=True)
+
+    # Logo sync otomatik
+    auto_logo_sync = fields.Boolean('Logo Senkronizasyonu Yap', default=True,
+                                   help="Import sonrası otomatik Logo senkronizasyonu yapılsın mı?")
+
+    def validate_excel_format(self, worksheet):
+        """Excel formatını doğrula"""
+        required_headers = [
+            'Sıra',
+            'Ünvanı/Adı Soyadı',
+            'Vergi Kimlik/T.C. Kimlik Numarası',
+            'Fatura No',
+            'Düzenleme Tarihi',
+            'Toplam Tutar',
+            'Ödenecek Tutar',
+            'Vergiler Toplamı',
+            'Para Birimi',
+            'Tesisat Numarası',
+            'Gönderim Şekli',
+            'İptal İtiraz Durum',
+            'İptal İtiraz Tarihi'
+        ]
+
+        # Header satırını oku (row 2)
+        headers = []
+        for col in range(1, 14):
+            cell_value = worksheet.cell(row=2, column=col).value
+            if cell_value:
+                headers.append(str(cell_value).strip())
+
+        # Eksik başlıkları kontrol et
+        missing_headers = []
+        for required in required_headers:
+            if required not in headers:
+                missing_headers.append(required)
+
+        if missing_headers:
+            raise UserError(_(
+                "❌ HATA: Excel dosyası beklenen formatta değil!\n\n"
+                "📋 Eksik sütunlar:\n%s\n\n"
+                "✅ Beklenen format:\n"
+                "1. Sıra\n"
+                "2. Ünvanı/Adı Soyadı\n"
+                "3. Vergi Kimlik/T.C. Kimlik Numarası\n"
+                "4. Fatura No\n"
+                "5. Düzenleme Tarihi\n"
+                "6. Toplam Tutar\n"
+                "7. Ödenecek Tutar\n"
+                "8. Vergiler Toplamı\n"
+                "9. Para Birimi\n"
+                "10. Tesisat Numarası\n"
+                "11. Gönderim Şekli\n"
+                "12. İptal İtiraz Durum\n"
+                "13. İptal İtiraz Tarihi\n\n"
+                "Lütfen doğru formatta bir Excel dosyası yükleyin!"
+            ) % '\n'.join(['• ' + h for h in missing_headers]))
+
+        return True
+
+    def _parse_excel_date(self, date_value):
+        """Excel tarih formatını parse et"""
+        if not date_value:
+            return None
+
+        if isinstance(date_value, datetime):
+            return date_value
+
+        # String ise parse et
+        date_str = str(date_value).strip()
+
+        # Farklı formatları dene
+        formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%d/%m/%Y',
+            '%d-%m-%Y',
+            '%d.%m.%Y',
+            '%Y-%m-%d',
+        ]
+
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_str, fmt)
+            except:
+                continue
+
+        _logger.warning("E-Arşiv Excel Import: Tarih parse edilemedi: %s", date_str)
+        return None
+
+    def _create_or_update_invoice(self, row_data):
+        """e.invoice kaydı oluştur veya güncelle"""
+        Invoice = self.env['e.invoice']
+
+        # Mevcut kaydı kontrol et
+        existing = Invoice.search([
+            ('invoice_id', '=', row_data['Fatura No']),
+            ('kaynak', '=', 'e-arsiv'),
+            ('direction', '=', 'IN')
+        ], limit=1)
+
+        # Değerleri hazırla
+        vals = {
+            'invoice_id': row_data['Fatura No'],
+            'uuid': f"{row_data['Fatura No']}_EXCEL_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            'direction': 'IN',
+            'kaynak': 'e-arsiv',
+            'sender': str(row_data.get('Vergi Kimlik/T.C. Kimlik Numarası', '')),
+            'receiver': '4510016851',  # Bizim VKN
+            'supplier': row_data.get('Ünvanı/Adı Soyadı', ''),
+            'customer': 'GÜVEN HASTANESİ A.Ş',
+            'issue_date': self._parse_excel_date(row_data.get('Düzenleme Tarihi')),
+            'tax_exclusive_total_amount': float(row_data.get('Toplam Tutar', 0) or 0),
+            'payable_amount': float(row_data.get('Ödenecek Tutar', 0) or 0),
+            'currency_code': row_data.get('Para Birimi', 'TRY'),
+            'sending_type': row_data.get('Gönderim Şekli', ''),
+            'profile_id': 'EARSIVFATURA',
+            'status_code': '150' if 'İptal' in str(row_data.get('İptal İtiraz Durum', '')) else '130',
+            'status_description': row_data.get('İptal İtiraz Durum', 'Raporlandı'),
+            'notes': f"Excel Import - {datetime.now()}\nİptal Tarihi: {row_data.get('İptal İtiraz Tarihi', '')}",
+        }
+
+        # Vergiler toplamını hesapla
+        if row_data.get('Vergiler Toplamı'):
+            try:
+                vergiler = float(row_data.get('Vergiler Toplamı', 0) or 0)
+                vals['tax_inclusive_total_amount'] = vals['tax_exclusive_total_amount'] + vergiler
+            except:
+                vals['tax_inclusive_total_amount'] = vals['tax_exclusive_total_amount']
+
+        if existing:
+            # UUID'yi güncelleme durumunda değiştirme
+            vals.pop('uuid', None)
+            existing.write(vals)
+            return existing.with_context(is_new=False)
+        else:
+            new_invoice = Invoice.create(vals)
+            return new_invoice.with_context(is_new=True)
+
+    def _run_logo_sync(self, invoice_ids):
+        """Logo senkronizasyonu çalıştır"""
+        try:
+            logo_wizard = self.env['logo.sync.wizard'].create({
+                'sync_mode': 'selected',
+                'date_filter': False,
+                'direction_filter': 'IN',
+                'test_mode': False
+            })
+            logo_wizard.with_context(active_ids=invoice_ids).action_sync_logo()
+            _logger.info("E-Arşiv Excel Import: Logo sync başarıyla tamamlandı")
+        except Exception as e:
+            _logger.warning("E-Arşiv Excel Import: Logo sync hatası: %s", str(e))
+
+    def _prepare_summary(self, created, updated, errors):
+        """Import özeti hazırla"""
+        from markupsafe import Markup
+
+        if errors > 0:
+            alert_class = "alert-warning"
+        else:
+            alert_class = "alert-success"
+
+        summary = f"""
+        <div class="alert {alert_class}">
+            <h4>✅ Import Tamamlandı!</h4>
+            <ul>
+                <li><strong>Yeni Kayıt:</strong> {created}</li>
+                <li><strong>Güncellenen:</strong> {updated}</li>
+                <li><strong>Hata:</strong> {errors}</li>
+                <li><strong>Toplam İşlenen:</strong> {created + updated}</li>
+            </ul>
+        </div>
+        """
+        return Markup(summary)
+
+    def action_import(self):
+        """Excel dosyasını import et"""
+        import base64
+        import io
+
+        try:
+            import openpyxl
+        except ImportError:
+            raise UserError(_("openpyxl kütüphanesi yüklü değil. Sistem yöneticisine başvurun."))
+
+        if not self.file_data:
+            raise UserError(_("Lütfen bir Excel dosyası seçin!"))
+
+        # Dosyayı decode et
+        file_content = base64.b64decode(self.file_data)
+        file_stream = io.BytesIO(file_content)
+
+        try:
+            # Excel dosyasını aç
+            workbook = openpyxl.load_workbook(file_stream, read_only=True)
+
+            # İlk sheet'i al
+            worksheet = workbook.active
+
+            # FORMAT DOĞRULAMA
+            self.validate_excel_format(worksheet)
+
+            # Veri işleme
+            created_count = 0
+            updated_count = 0
+            error_count = 0
+            invoice_ids = []
+
+            # Satırları işle (row 3'ten başla - data rows)
+            for row_num in range(3, worksheet.max_row + 1):
+                try:
+                    row_data = {}
+                    row_data['Sıra'] = worksheet.cell(row=row_num, column=1).value
+                    row_data['Ünvanı/Adı Soyadı'] = worksheet.cell(row=row_num, column=2).value
+                    row_data['Vergi Kimlik/T.C. Kimlik Numarası'] = worksheet.cell(row=row_num, column=3).value
+                    row_data['Fatura No'] = worksheet.cell(row=row_num, column=4).value
+                    row_data['Düzenleme Tarihi'] = worksheet.cell(row=row_num, column=5).value
+                    row_data['Toplam Tutar'] = worksheet.cell(row=row_num, column=6).value
+                    row_data['Ödenecek Tutar'] = worksheet.cell(row=row_num, column=7).value
+                    row_data['Vergiler Toplamı'] = worksheet.cell(row=row_num, column=8).value
+                    row_data['Para Birimi'] = worksheet.cell(row=row_num, column=9).value
+                    row_data['Tesisat Numarası'] = worksheet.cell(row=row_num, column=10).value
+                    row_data['Gönderim Şekli'] = worksheet.cell(row=row_num, column=11).value
+                    row_data['İptal İtiraz Durum'] = worksheet.cell(row=row_num, column=12).value
+                    row_data['İptal İtiraz Tarihi'] = worksheet.cell(row=row_num, column=13).value
+
+                    # Boş satırları atla
+                    if not row_data['Fatura No']:
+                        continue
+
+                    # e.invoice kaydı oluştur/güncelle
+                    invoice = self._create_or_update_invoice(row_data)
+                    if invoice:
+                        invoice_ids.append(invoice.id)
+                        if invoice._context.get('is_new'):
+                            created_count += 1
+                        else:
+                            updated_count += 1
+
+                except Exception as e:
+                    error_count += 1
+                    _logger.error("E-Arşiv Excel Import - Satır %s import hatası: %s", row_num, str(e))
+
+            workbook.close()
+
+            # Logo sync
+            if self.auto_logo_sync and invoice_ids:
+                self._run_logo_sync(invoice_ids)
+
+            # Özet mesajı
+            self.import_summary = self._prepare_summary(created_count, updated_count, error_count)
+
+            # Aynı wizard'ı göster (özet ile birlikte)
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'earsiv.excel.import.wizard',
+                'res_id': self.id,
+                'view_mode': 'form',
+                'target': 'new',
+            }
+
+        except openpyxl.utils.exceptions.InvalidFileException:
+            raise UserError(_(
+                "❌ HATA: Geçersiz Excel dosyası!\n\n"
+                "Yüklediğiniz dosya geçerli bir Excel dosyası değil.\n"
+                "Lütfen .xlsx uzantılı bir Excel dosyası yükleyin."
+            ))
+        except Exception as e:
+            if "beklenen formatta değil" in str(e):
+                raise  # Format hatası mesajını aynen göster
+            else:
+                raise UserError(_("Import hatası: %s") % str(e))

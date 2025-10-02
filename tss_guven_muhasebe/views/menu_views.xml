@@ -65,11 +65,17 @@
               action="action_e_invoice_sync_wizard"
               sequence="10"/>
 
-    <menuitem id="menu_logo_sync" 
+    <menuitem id="menu_logo_sync"
               name="Logo Senkronizasyonu"
               parent="main_sync_menu"
               action="action_logo_sync_wizard"
               sequence="20"/>
+
+    <menuitem id="menu_earsiv_excel_import"
+              name="E-Arşiv Gelen Dosyası İçeri Al"
+              parent="main_sync_menu"
+              action="action_earsiv_excel_import_wizard"
+              sequence="30"/>
 
     <!-- Configuration Menu -->
     <menuitem id="menu_e_invoice_config" 

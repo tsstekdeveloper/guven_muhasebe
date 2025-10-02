@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'E-Fatura Entegrasyonu',
-    'version': '1.0.2',
+    'version': '1.0.3',
     'category': 'Accounting/Accounting',
     'summary': 'izibiz E-Fatura/E-Arşiv sistemi entegrasyonu ve Logo MSSQL senkronizasyonu',
     'description': """
@@ -66,17 +66,17 @@ Teknik Gereksinimler:
     'data': [
         # Security
         'security/ir.model.access.csv',
-        
+
         # Data
-        
-        'data/ir_cron_data.xml',
-        
+        'data/cron_data.xml',
+
         # Views
         'views/e_invoice_views.xml',
         'views/dashboard_views.xml',
         'views/logo_sync_views.xml',
         'views/kdv2_views.xml',
         'views/muhtasar_views.xml',
+        'views/earsiv_import_views.xml',  # E-Arşiv Excel import
         'views/menu_views.xml',
     ],
     'demo': [
@@ -88,6 +88,7 @@ Teknik Gereksinimler:
             'requests',  # HTTP requests
             'lxml',      # XML processing
             'pymssql',   # MSSQL database connection for Logo
+            'openpyxl',  # Excel file reading for E-Arşiv import
         ],
     },
     'assets': {

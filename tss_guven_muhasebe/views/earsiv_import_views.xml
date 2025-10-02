@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Form View -->
+    <record id="view_earsiv_excel_import_wizard" model="ir.ui.view">
+        <field name="name">earsiv.excel.import.wizard.form</field>
+        <field name="model">earsiv.excel.import.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="alert alert-info" role="alert" invisible="import_summary != False">
+                        <h4 class="alert-heading">📋 Excel Format Bilgisi</h4>
+                        <p>Excel dosyanız aşağıdaki sütunları sırasıyla içermelidir:</p>
+                        <ol>
+                            <li>Sıra</li>
+                            <li>Ünvanı/Adı Soyadı</li>
+                            <li>Vergi Kimlik/T.C. Kimlik Numarası</li>
+                            <li>Fatura No</li>
+                            <li>Düzenleme Tarihi</li>
+                            <li>Toplam Tutar</li>
+                            <li>Ödenecek Tutar</li>
+                            <li>Vergiler Toplamı</li>
+                            <li>Para Birimi</li>
+                            <li>Tesisat Numarası</li>
+                            <li>Gönderim Şekli</li>
+                            <li>İptal İtiraz Durum</li>
+                            <li>İptal İtiraz Tarihi</li>
+                        </ol>
+                        <p class="mb-0"><strong>Not:</strong> İlk satır başlık bilgisi olmalı, veriler 3. satırdan itibaren başlamalıdır.</p>
+                    </div>
+
+                    <group invisible="import_summary != False">
+                        <group>
+                            <field name="file_data" filename="file_name" widget="binary" required="1"/>
+                            <field name="file_name" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="auto_logo_sync"/>
+                        </group>
+                    </group>
+
+                    <div invisible="import_summary == False">
+                        <field name="import_summary" widget="html" readonly="1" nolabel="1"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_import"
+                            string="İçeri Al"
+                            type="object"
+                            class="btn-primary"
+                            invisible="import_summary != False"
+                            icon="fa-upload"/>
+                    <button string="Kapat"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_earsiv_excel_import_wizard" model="ir.actions.act_window">
+        <field name="name">E-Arşiv Gelen Dosyası İçeri Al</field>
+        <field name="res_model">earsiv.excel.import.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                E-Arşiv gelen faturalarını Excel dosyasından içeri aktarın
+            </p>
+            <p>
+                Excel dosyanız belirtilen formatta olmalıdır.
+                Format bilgisi için wizard penceresini kontrol ediniz.
+            </p>
+        </field>
+    </record>
+</odoo>

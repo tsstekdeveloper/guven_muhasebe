@@ -10,3 +10,4 @@ access_logo_kdv2_report,logo.kdv2.report,model_logo_kdv2_report,base.group_user,
 access_logo_kdv2_wizard,logo.kdv2.wizard,model_logo_kdv2_wizard,base.group_user,1,1,1,1
 access_logo_muhtasar_report,logo.muhtasar.report,model_logo_muhtasar_report,base.group_user,1,1,1,1
 access_logo_muhtasar_wizard,logo.muhtasar.wizard,model_logo_muhtasar_wizard,base.group_user,1,1,1,1
+access_earsiv_excel_import_wizard,earsiv.excel.import.wizard,model_earsiv_excel_import_wizard,base.group_user,1,1,1,1

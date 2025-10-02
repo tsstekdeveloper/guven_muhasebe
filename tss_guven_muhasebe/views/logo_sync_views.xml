@@ -127,23 +127,6 @@ if records:
                     <div class="row mt16 o_settings_container">
                         <!-- E-Fatura SOAP Ayarları -->
                         <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane">
-                                <field name="efatura_auto_sync"/>
-                            </div>
-                            <div class="o_setting_right_pane">
-                                <label for="efatura_auto_sync" string="E-Fatura Otomatik Senkronizasyon"/>
-                                <div class="text-muted">
-                                    E-fatura verilerini otomatik olarak senkronize et
-                                </div>
-                                <div class="content-group" invisible="not efatura_auto_sync">
-                                    <div class="mt16">
-                                        <field name="efatura_sync_interval" class="o_light_label"/>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
                                 <label for="efatura_username" string="E-Fatura SOAP Servisi"/>
                                 <div class="text-muted">
@@ -212,6 +195,148 @@ if records:
                                     <div class="mt8">
                                         <button name="action_test_logo_connection" type="object" 
                                                 string="Logo Bağlantısını Test Et" class="btn-secondary"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cron Ayarları -->
+                    <h3 class="mt32">Otomatik Senkronizasyon Cron Ayarları</h3>
+                    <div class="row mt16 o_settings_container">
+                        <!-- Cron 1: Progressive Sync -->
+                        <div class="col-12 col-lg-12 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="cron1_enabled"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="cron1_enabled" string="Progressive Sync (7 Günlük Periyotlar)"/>
+                                <div class="text-muted">
+                                    Belirtilen tarih aralığında 7 günlük periyotlarla e-fatura ve e-arşiv senkronizasyonu
+                                </div>
+                                <div class="content-group" invisible="cron1_enabled == False">
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron1_start_date" string="Başlangıç Tarihi"/>
+                                            <field name="cron1_start_date" placeholder="YYYY-MM-DD"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <label for="cron1_end_date" string="Bitiş Tarihi"/>
+                                            <field name="cron1_end_date" placeholder="YYYY-MM-DD"/>
+                                        </div>
+                                    </div>
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron1_last_sync_date" string="Son Senkronize Tarih"/>
+                                            <field name="cron1_last_sync_date" readonly="1" placeholder="YYYY-MM-DD"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <button name="action_reset_progressive_sync" type="object"
+                                                    string="Sıfırla" class="btn-secondary"
+                                                    help="Son senkronize tarihi sıfırla ve baştan başla"/>
+                                        </div>
+                                    </div>
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron1_start_hour" string="Çalışma Başlangıç Saati"/>
+                                            <field name="cron1_start_hour"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <label for="cron1_end_hour" string="Çalışma Bitiş Saati"/>
+                                            <field name="cron1_end_hour"/>
+                                        </div>
+                                    </div>
+                                    <div class="text-info mt8">
+                                        <i class="fa fa-info-circle"/> 10 dakikada bir kontrol eder, sadece çalışma saatleri içinde işlem yapar.
+                                        Bitiş tarihine ulaştığında başlangıç tarihine döner.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cron 2: Retrospective Sync -->
+                        <div class="col-12 col-lg-12 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="cron2_enabled"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="cron2_enabled" string="Retrospective Sync (Geriye Dönük)"/>
+                                <div class="text-muted">
+                                    Belirtilen gün sayısı kadar önceki günün faturalarını senkronize et
+                                </div>
+                                <div class="content-group" invisible="cron2_enabled == False">
+                                    <div class="row mt8">
+                                        <div class="col-12">
+                                            <label for="cron2_days_ago" string="Kaç Gün Önce"/>
+                                            <field name="cron2_days_ago"/>
+                                            <div class="text-muted mt4">
+                                                Örnek: 3 girilirse, her çalıştığında 3 gün önceki faturalar senkronize edilir.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron2_start_hour" string="Çalışma Başlangıç Saati"/>
+                                            <field name="cron2_start_hour"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <label for="cron2_end_hour" string="Çalışma Bitiş Saati"/>
+                                            <field name="cron2_end_hour"/>
+                                        </div>
+                                    </div>
+                                    <div class="text-info mt8">
+                                        <i class="fa fa-info-circle"/> 10 dakikada bir kontrol eder, sadece çalışma saatleri içinde işlem yapar.
+                                        Sürekli çalışır, bitiş tarihi yoktur.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cron 3: Logo Monthly Sync -->
+                        <div class="col-12 col-lg-12 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="cron3_enabled"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="cron3_enabled" string="Logo Monthly Sync (Aylık Periyotlar)"/>
+                                <div class="text-muted">
+                                    Belirtilen tarih aralığında aylık periyotlarla Logo senkronizasyonu
+                                </div>
+                                <div class="content-group" invisible="cron3_enabled == False">
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron3_start_date" string="Başlangıç Tarihi"/>
+                                            <field name="cron3_start_date" placeholder="YYYY-MM-DD"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <label for="cron3_end_date" string="Bitiş Tarihi"/>
+                                            <field name="cron3_end_date" placeholder="YYYY-MM-DD"/>
+                                        </div>
+                                    </div>
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron3_last_sync_month" string="Son Senkronize Ay"/>
+                                            <field name="cron3_last_sync_month" readonly="1" placeholder="YYYY-MM-DD"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <button name="action_reset_logo_monthly_sync" type="object"
+                                                    string="Sıfırla" class="btn-secondary"
+                                                    help="Son senkronize ayı sıfırla ve baştan başla"/>
+                                        </div>
+                                    </div>
+                                    <div class="row mt8">
+                                        <div class="col-6">
+                                            <label for="cron3_start_hour" string="Çalışma Başlangıç Saati"/>
+                                            <field name="cron3_start_hour"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <label for="cron3_end_hour" string="Çalışma Bitiş Saati"/>
+                                            <field name="cron3_end_hour"/>
+                                        </div>
+                                    </div>
+                                    <div class="text-info mt8">
+                                        <i class="fa fa-info-circle"/> 10 dakikada bir kontrol eder, sadece çalışma saatleri içinde işlem yapar.
+                                        Aylık periyotlarla Logo ile senkronizasyon yapar. Bitiş tarihine ulaştığında başlangıç tarihine döner.
                                     </div>
                                 </div>
                             </div>

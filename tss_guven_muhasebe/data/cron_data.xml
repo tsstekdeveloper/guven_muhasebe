@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Cron 1: Progressive E-Fatura/E-Arşiv Sync (7 Günlük Periyotlar) -->
+        <record id="ir_cron_progressive_sync" model="ir.cron">
+            <field name="name">Progressive E-Fatura/E-Arşiv Sync (7 Günlük)</field>
+            <field name="model_id" ref="model_e_invoice"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_progressive_sync()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active">False</field>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+
+        <!-- Cron 2: Retrospective E-Fatura/E-Arşiv Sync (X Gün Önce) -->
+        <record id="ir_cron_retrospective_sync" model="ir.cron">
+            <field name="name">Retrospective E-Fatura/E-Arşiv Sync (X Gün Önce)</field>
+            <field name="model_id" ref="model_e_invoice"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_retrospective_sync()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active">False</field>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+
+        <!-- Cron 3: Logo Monthly Sync (Aylık Periyotlar) -->
+        <record id="ir_cron_logo_monthly_sync" model="ir.cron">
+            <field name="name">Logo Monthly Sync (Aylık Periyot)</field>
+            <field name="model_id" ref="model_e_invoice"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_logo_monthly_sync()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active">False</field>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+    </data>
+</odoo>
