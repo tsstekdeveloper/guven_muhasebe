@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.py[co]
+*.pyc
+*.pyo
+*.pyd
+
+# Odoo
+*.log

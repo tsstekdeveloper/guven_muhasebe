@@ -715,7 +715,7 @@ class e_invoice(models.Model):
                                 ('issue_date', '>=', start_date),
                                 ('issue_date', '<=', end_date),
                                 ('direction', '=', direction),
-                                ('kaynak', 'in', ['e-fatura', 'e-arsiv'])
+                                ('kaynak', '=', 'e-fatura')
                             ]
                             invoices = self.search(domain)
 
