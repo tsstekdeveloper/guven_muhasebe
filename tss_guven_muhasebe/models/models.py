@@ -25,6 +25,13 @@ class e_invoice(models.Model):
     _rec_name = 'invoice_id'
     _inherit = ['mail.thread', 'mail.activity.mixin']
 
+    # SQL Constraints (v1.0.6)
+    _sql_constraints = [
+        ('unique_invoice_record',
+         'UNIQUE(invoice_id, kaynak, uuid)',
+         'Bu fatura kaydı zaten mevcut! (Aynı invoice_id, kaynak ve UUID kombinasyonu tekrar edilemez.)')
+    ]
+
     # Ana Bilgiler
     invoice_id = fields.Char(string='Fatura ID', required=True, index=True)
     uuid = fields.Char(string='UUID', required=True, index=True)
@@ -54,6 +61,19 @@ class e_invoice(models.Model):
     status_detail = fields.Char(string='Durum Detayı', help="Detaylı durum açıklaması", compute='_get_status_detail', store=True)
     gib_status_code = fields.Char(string='GİB Durum Kodu', tracking=True)
     gib_status_description = fields.Char(string='GİB Durum Açıklaması')
+
+    # Yanıt Bilgileri (v1.0.4)
+    response_code = fields.Char(
+        string='Yanıt Kodu',
+        tracking=True,
+        help="Fatura yanıt kodu (kabul/red/iptal bilgisi)"
+    )
+    response_description = fields.Char(
+        string='Yanıt Açıklaması',
+        tracking=True,
+        help="Fatura yanıt açıklaması (detaylı durum)"
+    )
+
     envelope_identifier = fields.Char(string='Zarf Tanımlayıcı')
     direction = fields.Selection([
         ('IN', 'Gelen'),
@@ -100,15 +120,46 @@ class e_invoice(models.Model):
     # Notlar
     notes = fields.Text(string='Notlar')
 
-    @api.depends('status_code', 'kaynak')
+    # Kilit Mekanizması (v1.0.5)
+    is_locked = fields.Boolean(
+        string='Kilitli',
+        default=False,
+        tracking=True,
+        help="Bu kayıt kilitlendiğinde otomatik senkronizasyonlar ve manuel düzenlemeler engellenecektir."
+    )
+    locked_by_id = fields.Many2one(
+        'res.users',
+        string='Kilitleyen Kullanıcı',
+        readonly=True,
+        tracking=True,
+        help="Kaydı kilitleyen kullanıcı"
+    )
+    locked_date = fields.Datetime(
+        string='Kilitlenme Tarihi',
+        readonly=True,
+        tracking=True,
+        help="Kaydın kilitlendiği tarih ve saat"
+    )
+    lock_reason = fields.Text(
+        string='Kilitleme Nedeni',
+        help="Kaydın neden kilitlendiği (opsiyonel)"
+    )
+
+    @api.depends('status_code', 'kaynak', 'profile_id')
     def _compute_active(self):
-        """Geçerli faturaları belirle - kaynak tipine göre farklı mantık"""
+        """Geçerli faturaları belirle - kaynak tipine göre farklı mantık (v1.0.6)"""
         for record in self:
             if record.kaynak == 'e-arsiv':
-                # E-Arşiv için geçersiz status kodları
+                # ÖNCE profile_id kontrolü (daha kesin ve öncelikli)
+                if record.profile_id == 'IPTAL':
+                    record.gvn_active = False
+                # Sonra status_code kontrolü
                 # 150: RAPORLANMADAN İPTAL EDİLDİ
                 # 200: FATURA ID BULUNAMADI
-                record.gvn_active = record.status_code not in ['150', '200']
+                elif record.status_code in ['150', '200']:
+                    record.gvn_active = False
+                else:
+                    record.gvn_active = True
             else:
                 # E-Fatura için geçersiz status kodları
                 # 116: Geçersiz, 120: Ret Edildi, 130: Reddedildi, 136: GİB'e Gönderim Hatası
@@ -330,8 +381,84 @@ class e_invoice(models.Model):
         for test_date in test_dates:
             parsed = self._parse_date_field(test_date, 'test_{}'.format(test_date))
             _logger.info("Test: %s -> %s", test_date, parsed)
-            
+
         return True
+
+    # Kilit Mekanizması Metodları (v1.0.5)
+    def write(self, vals):
+        """Kilitli kayıtları korumak için write metodunu override et"""
+        # Kilit alanlarının kendisi güncelleniyorsa izin ver
+        lock_fields = {'is_locked', 'locked_by_id', 'locked_date', 'lock_reason'}
+        if set(vals.keys()).issubset(lock_fields):
+            return super(e_invoice, self).write(vals)
+
+        # Kilitli kayıtları kontrol et
+        locked_records = self.filtered('is_locked')
+        if locked_records:
+            raise UserError(
+                f"{len(locked_records)} adet kilitli kayıt var!\n\n"
+                f"Kilitli fatura ID'leri: {', '.join(locked_records.mapped('invoice_id'))}\n\n"
+                "Lütfen önce kayıtların kilidini kaldırın."
+            )
+
+        return super(e_invoice, self).write(vals)
+
+    def action_lock(self):
+        """Kayıtları kilitle"""
+        for record in self:
+            if not record.is_locked:
+                record.write({
+                    'is_locked': True,
+                    'locked_by_id': self.env.user.id,
+                    'locked_date': fields.Datetime.now(),
+                })
+                # Chatter'a mesaj ekle
+                record.message_post(
+                    body=f"Kayıt {self.env.user.name} tarafından kilitlendi.",
+                    subject="Kayıt Kilitlendi"
+                )
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Başarılı',
+                'message': f'{len(self)} kayıt kilitlendi.',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+
+    def action_unlock(self):
+        """Kayıtların kilidini kaldır"""
+        for record in self:
+            if record.is_locked:
+                locked_by = record.locked_by_id.name if record.locked_by_id else 'Bilinmeyen'
+                locked_date = record.locked_date.strftime('%d.%m.%Y %H:%M') if record.locked_date else 'Bilinmeyen'
+
+                record.write({
+                    'is_locked': False,
+                    'locked_by_id': False,
+                    'locked_date': False,
+                    'lock_reason': False,
+                })
+                # Chatter'a mesaj ekle
+                record.message_post(
+                    body=f"Kilidin açılması: {self.env.user.name}<br/>"
+                         f"Daha önce kilitleyen: {locked_by} ({locked_date})",
+                    subject="Kilit Kaldırıldı"
+                )
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Başarılı',
+                'message': f'{len(self)} kayıdın kilidi kaldırıldı.',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
 
     @api.model
     def create_from_soap_data(self, soap_data):
@@ -360,6 +487,8 @@ class e_invoice(models.Model):
                     'status_code': header.get('STATUS_CODE'),
                     'gib_status_code': header.get('GIB_STATUS_CODE'),
                     'gib_status_description': header.get('GIB_STATUS_DESCRIPTION'),
+                    'response_code': header.get('RESPONSE_CODE'),  # YENİ (v1.0.4)
+                    'response_description': header.get('RESPONSE_DESCRIPTION'),  # YENİ (v1.0.4)
                     'envelope_identifier': header.get('ENVELOPE_IDENTIFIER'),
                     'from_field': header.get('FROM'),
                     'to_field': header.get('TO'),
@@ -498,12 +627,17 @@ class e_invoice(models.Model):
             updated_count = 0
             
             for invoice_data in invoices:
+                # UUID unique olduğu için tek başına yeterli (v1.0.6 performans optimizasyonu)
                 existing_invoice = self.search([
-                    ('uuid', '=', invoice_data.get('UUID')),
-                    ('invoice_id', '=', invoice_data.get('ID'))
+                    ('uuid', '=', invoice_data.get('UUID'))
                 ], limit=1)
-                
+
                 if existing_invoice:
+                    # Kilitli kayıtları güncelleme (v1.0.5)
+                    if existing_invoice.is_locked:
+                        _logger.info(f"SOAP Sync: Kilitli kayıt atlandı - {existing_invoice.invoice_id}")
+                        continue
+
                     # Güncelle
                     invoice_vals = self._prepare_invoice_vals_from_soap(invoice_data)
                     existing_invoice.write(invoice_vals)
@@ -641,6 +775,8 @@ class e_invoice(models.Model):
                 'status_code': header.get('STATUS_CODE'),
                 'gib_status_code': header.get('GIB_STATUS_CODE'),
                 'gib_status_description': header.get('GIB_STATUS_DESCRIPTION'),
+                'response_code': header.get('RESPONSE_CODE'),  # YENİ (v1.0.4)
+                'response_description': header.get('RESPONSE_DESCRIPTION'),  # YENİ (v1.0.4)
                 'envelope_identifier': header.get('ENVELOPE_IDENTIFIER'),  # ✅ CREATE ile tutarlı
                 'from_field': header.get('FROM'),  # ✅ CREATE ile tutarlı
                 'to_field': header.get('TO'),  # ✅ CREATE ile tutarlı
@@ -761,15 +897,20 @@ class e_invoice(models.Model):
             if invoices:
                 for invoice_data in invoices:
                     try:
-                        # Mevcut kayıt kontrolü (E-Fatura pattern)
+                        # Mevcut kayıt kontrolü (UUID ile - v1.0.6)
                         invoice_id = invoice_data.get('ID') or invoice_data.get('HEADER', {}).get('INVOICE_ID')
+                        uuid = invoice_data.get('UUID') or invoice_data.get('HEADER', {}).get('UUID')
 
                         existing_invoice = self.search([
-                            ('invoice_id', '=', invoice_id),
-                            ('kaynak', '=', 'e-arsiv')
+                            ('uuid', '=', uuid)
                         ], limit=1)
 
                         if existing_invoice:
+                            # Kilitli kayıtları güncelleme (v1.0.5)
+                            if existing_invoice.is_locked:
+                                _logger.info(f"E-Arşiv Sync: Kilitli kayıt atlandı - {invoice_id}")
+                                continue
+
                             # Güncelle
                             invoice_vals = self._prepare_earsiv_vals_from_soap(invoice_data)
                             existing_invoice.write(invoice_vals)
@@ -930,7 +1071,7 @@ class e_invoice(models.Model):
             # HARD-CODED Values
             'direction': 'OUT',  # E-Arşiv her zaman giden
             'kaynak': 'e-arsiv',
-            'receiver': '4510016851',  # Bizim VKN (company)
+            'receiver': header.get('CUSTOMER_IDENTIFIER') or '4510016851',  # Müşteri VKN/TCKN
 
             # Ana Bilgiler - Attribute'lerden ve HEADER'dan
             'invoice_id': soap_data.get('ID') or header.get('INVOICE_ID'),
@@ -968,7 +1109,7 @@ class e_invoice(models.Model):
             # HARD-CODED Values (update sırasında değişmez ama tutarlılık için ekle)
             'direction': 'OUT',
             'kaynak': 'e-arsiv',
-            'receiver': '4510016851',
+            'receiver': header.get('CUSTOMER_IDENTIFIER') or '4510016851',
 
             # Ana Bilgiler - Güncellenebilir
             'sender': header.get('SENDER_IDENTIFIER'),
@@ -1265,11 +1406,12 @@ class e_invoice(models.Model):
 
             _logger.info("Logo Monthly Sync başlatılıyor: %s - %s", current_date, period_end)
 
-            # Bu periyot için e_invoice kayıtlarını al
+            # Bu periyot için e_invoice kayıtlarını al (Kilitli kayıtları hariç tut - v1.0.5)
             domain = [
                 ('issue_date', '>=', current_date),
                 ('issue_date', '<=', period_end),
-                ('kaynak', 'in', ['e-fatura', 'e-arsiv'])
+                ('kaynak', 'in', ['e-fatura', 'e-arsiv']),
+                ('is_locked', '=', False)
             ]
 
             invoices = self.search(domain)
@@ -1919,6 +2061,11 @@ class LogoSyncWizard(models.TransientModel):
             # Her faturayı işle
             for invoice in e_invoices:
                 try:
+                    # Kilitli kayıtları atlama (v1.0.5)
+                    if invoice.is_locked:
+                        _logger.info(f"Logo Sync: Kilitli kayıt atlandı - {invoice.invoice_id}")
+                        continue
+
                     # Logo'da kontrol et
                     logo_result = self._check_invoice_in_logo(
                         cursor,
@@ -1926,23 +2073,23 @@ class LogoSyncWizard(models.TransientModel):
                         invoice.direction,
                         invoice.issue_date
                     )
-                    
+
                     # Mevcut notları koru
                     existing_notes = invoice.notes or ''
                     new_note = logo_result['note']
-                    
+
                     if existing_notes:
                         updated_notes = "{}\n{}".format(existing_notes, new_note)
                     else:
                         updated_notes = new_note
-                    
+
                     # E-fatura kaydını güncelle
                     update_vals = {
                         'exists_in_logo': logo_result['exists'],
                         'logo_record_id': logo_result['logo_record_id'],
                         'notes': updated_notes
                     }
-                    
+
                     invoice.write(update_vals)
                     stats['updated'] += 1
                     
@@ -3194,6 +3341,11 @@ class EarsivExcelImportWizard(models.TransientModel):
                 vals['tax_inclusive_total_amount'] = vals['tax_exclusive_total_amount']
 
         if existing:
+            # Kilitli kayıtları güncelleme (v1.0.5)
+            if existing.is_locked:
+                _logger.info(f"Excel Import: Kilitli kayıt atlandı - {row_data['Fatura No']}")
+                return existing.with_context(is_new=False, skipped=True)
+
             # UUID'yi güncelleme durumunda değiştirme
             vals.pop('uuid', None)
             existing.write(vals)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'E-Fatura Entegrasyonu',
-    'version': '1.0.3',
+    'version': '1.0.6',
     'category': 'Accounting/Accounting',
     'summary': 'izibiz E-Fatura/E-Arşiv sistemi entegrasyonu ve Logo MSSQL senkronizasyonu',
     'description': """

@@ -14,7 +14,9 @@
                 <field name="direction" optional="show"/>
                 <field name="kaynak" optional="show"/>
                 <field name="status_detail" optional="show"/>
+                <field name="response_code" optional="hide"/>
                 <field name="gvn_active" optional="show"/>
+                <field name="is_locked" widget="boolean_toggle" optional="show"/>
             </list>
         </field>
     </record>
@@ -25,9 +27,19 @@
         <field name="model">e.invoice</field>
         <field name="arch" type="xml">
             <form string="E-Fatura">
-<!--                 <header>
-                    <field name="status" widget="statusbar" statusbar_visible=""/>
-                </header> -->
+                <header>
+                    <!-- Kilit Mekanizması Butonları (v1.0.5) -->
+                    <button name="action_lock"
+                            type="object"
+                            string="Kilitle"
+                            class="btn-warning"
+                            invisible="is_locked"/>
+                    <button name="action_unlock"
+                            type="object"
+                            string="Kilidi Kaldır"
+                            class="btn-success"
+                            invisible="not is_locked"/>
+                </header>
                 <sheet>
 <!--                     <div class="oe_button_box" name="button_box">
                         <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive">
@@ -40,7 +52,7 @@
                         </h1>
                     </div> -->
                     <group>
-                        <group name="main_info" string="Ana Bilgiler">
+                        <group name="main_info" string="Ana Bilgiler" readonly="is_locked">
                             <field name="uuid" readonly="1"/>
                             <field name="direction"/>
                             <field name="kaynak"/>
@@ -54,17 +66,19 @@
                             <field name="earchive_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
                             <field name="sending_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
                         </group>
-                        <group name="status_info" string="Durum Bilgileri">
+                        <group name="status_info" string="Durum Bilgileri" readonly="is_locked">
                             <field name="status_detail"/>
                             <field name="status"/>
                             <field name="status_description"/>
                             <field name="status_code"/>
+                            <field name="response_code"/>
+                            <field name="response_description"/>
                             <field name="gib_status_code"/>
                             <field name="gib_status_description"/>
                         </group>
                     </group>
                     <group>
-                        <group name="sender_info" string="Gönderen/Alıcı">
+                        <group name="sender_info" string="Gönderen/Alıcı" readonly="is_locked">
                             <field name="sender"/>
                             <field name="receiver"/>
                             <field name="supplier"/>
@@ -72,7 +86,7 @@
                             <field name="from_field"/>
                             <field name="to_field"/>
                         </group>
-                        <group name="financial_info" string="Finansal Bilgiler">
+                        <group name="financial_info" string="Finansal Bilgiler" readonly="is_locked">
                             <field name="payable_amount"/>
                             <field name="tax_exclusive_total_amount"/>
                             <field name="tax_inclusive_total_amount"/>
@@ -80,12 +94,23 @@
                             <field name="line_extension_amount"/>
                         </group>
                     </group>
-                    <group name="other_info" string="Diğer Bilgiler">
+                    <group name="other_info" string="Diğer Bilgiler" readonly="is_locked">
                         <field name="envelope_identifier"/>
+                    </group>
+                    <!-- Kilit Bilgileri (v1.0.5) -->
+                    <group name="lock_info" string="Kilit Bilgileri" invisible="not is_locked">
+                        <group>
+                            <field name="is_locked" widget="boolean_toggle"/>
+                            <field name="locked_by_id"/>
+                        </group>
+                        <group>
+                            <field name="locked_date"/>
+                            <field name="lock_reason"/>
+                        </group>
                     </group>
                     <notebook>
                         <page string="Notlar">
-                            <field name="notes" placeholder="Fatura ile ilgili notlarınızı buraya yazabilirsiniz..."/>
+                            <field name="notes" placeholder="Fatura ile ilgili notlarınızı buraya yazabilirsiniz..." readonly="is_locked"/>
                         </page>
                     </notebook>
                 </sheet>
@@ -111,6 +136,7 @@
                 <field name="customer"/>
                 <field name="supplier"/>
                 <field name="kaynak"/>
+                <field name="response_code"/>
                 <separator/>
                 <filter string="Gelen Faturalar" name="incoming" domain="[('direction', '=', 'IN')]"/>
                 <filter string="Giden Faturalar" name="outgoing" domain="[('direction', '=', 'OUT')]"/>
@@ -119,8 +145,14 @@
                 <filter string="E-Arşiv" name="kaynak_earsiv" domain="[('kaynak', '=', 'e-arsiv')]"/>
                 <filter string="E-İrsaliye" name="kaynak_eirsaliye" domain="[('kaynak', '=', 'e-irsaliye')]"/>
                 <separator/>
+                <filter string="Yanıt Bekleyen" name="waiting_response" domain="[('response_code', '=', False)]"/>
+                <filter string="Kabul Edilmiş" name="accepted" domain="[('response_code', '!=', False)]"/>
+                <separator/>
                 <filter string="Geçerli Faturalar" name="gvn_active" domain="[('gvn_active', '=', True)]"/>
                 <filter string="Geçerli Olmayan Faturalar" name="gvn_pasive" domain="[('gvn_active', '=', False)]"/>
+                <separator/>
+                <filter string="Kilitli Kayıtlar" name="locked" domain="[('is_locked', '=', True)]"/>
+                <filter string="Kilitsiz Kayıtlar" name="unlocked" domain="[('is_locked', '=', False)]"/>
                 <separator/>
                 <filter string="Bu Ay" name="this_month"
                         domain="[('issue_date', '&gt;=', (context_today() - relativedelta(day=1)).strftime('%Y-%m-%d')),
