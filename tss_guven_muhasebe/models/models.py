@@ -486,6 +486,52 @@ class e_invoice(models.Model):
             }
         }
 
+    def unlink(self):
+        """
+        Toplu silme için optimize edilmiş unlink metodu
+        - Önce self-reference'ları temizler (cancelled_invoice_id)
+        - Büyük veri setleri için batch işleme yapar
+        - Lock timeout'ları önler
+        """
+        if not self:
+            return super(e_invoice, self).unlink()
+
+        # 1. Önce bu kayıtlara referans veren cancelled_invoice_id'leri NULL yap
+        # Bu adım lock'ları önler
+        _logger.info(f"Silinecek {len(self)} kayıta referans veren kayıtlar temizleniyor...")
+        self.env.cr.execute("""
+            UPDATE e_invoice
+            SET cancelled_invoice_id = NULL
+            WHERE cancelled_invoice_id IN %s
+        """, (tuple(self.ids),))
+
+        # Değişikliği commit et (lock'ları serbest bırak)
+        self.env.cr.commit()
+
+        # 2. Eğer 100'den fazla kayıt varsa batch'le sil
+        if len(self) > 100:
+            _logger.info(f"{len(self)} kayıt batch'ler halinde siliniyor...")
+            total = len(self)
+            deleted = 0
+
+            for i in range(0, total, 100):
+                batch = self[i:min(i+100, total)]
+                try:
+                    super(e_invoice, batch).unlink()
+                    deleted += len(batch)
+                    # Her batch'ten sonra commit
+                    self.env.cr.commit()
+                    _logger.info(f"Silinen: {deleted}/{total}")
+                except Exception as e:
+                    _logger.error(f"Batch silme hatası (kayıtlar {i}-{min(i+100, total)}): {str(e)}")
+                    # Hata durumunda devam et
+                    continue
+
+            return True
+
+        # 3. 100'den az kayıt varsa normal sil
+        return super(e_invoice, self).unlink()
+
     @api.model
     def create_from_soap_data(self, soap_data):
         """SOAP servisinden gelen veriyi Odoo modeline dönüştür"""
