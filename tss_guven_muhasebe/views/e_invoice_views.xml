@@ -6,7 +6,8 @@
         <field name="model">e.invoice</field>
         <field name="arch" type="xml">
             <list string="E-Faturalar" default_order="issue_date, invoice_id">
-                <field name="invoice_id" optional="show"/>
+                <field name="is_cancellation" invisible="1"/>
+                <field name="invoice_id" optional="show" decoration-danger="is_cancellation == True"/>
                 <field name="issue_date" optional="show"/>
                 <field name="supplier" optional="show"/>
                 <field name="customer" optional="show"/>
@@ -65,6 +66,9 @@
                             <field name="reported" readonly="1" invisible="kaynak != 'e-arsiv'"/>
                             <field name="earchive_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
                             <field name="sending_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
+                            <!-- İptal İlişkisi (v1.0.7) -->
+                            <field name="is_cancellation" readonly="1" invisible="kaynak != 'e-arsiv'"/>
+                            <field name="cancelled_invoice_id" readonly="1" invisible="is_cancellation == False" options="{'no_create': True, 'no_create_edit': True}"/>
                         </group>
                         <group name="status_info" string="Durum Bilgileri" readonly="is_locked">
                             <field name="status_detail"/>
@@ -111,6 +115,20 @@
                     <notebook>
                         <page string="Notlar">
                             <field name="notes" placeholder="Fatura ile ilgili notlarınızı buraya yazabilirsiniz..." readonly="is_locked"/>
+                        </page>
+                        <page string="İptal Kayıtları" invisible="is_cancellation == True or kaynak != 'e-arsiv'">
+                            <group>
+                                <field name="cancellation_ids" nolabel="1">
+                                    <list string="İptal Kayıtları" create="0" delete="0">
+                                        <field name="invoice_id"/>
+                                        <field name="uuid"/>
+                                        <field name="issue_date"/>
+                                        <field name="profile_id"/>
+                                        <field name="status_detail"/>
+                                        <field name="create_date"/>
+                                    </list>
+                                </field>
+                            </group>
                         </page>
                     </notebook>
                 </sheet>

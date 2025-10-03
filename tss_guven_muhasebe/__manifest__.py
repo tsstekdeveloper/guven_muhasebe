@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'E-Fatura Entegrasyonu',
-    'version': '1.0.6',
+    'version': '1.0.12',
     'category': 'Accounting/Accounting',
     'summary': 'izibiz E-Fatura/E-Arşiv sistemi entegrasyonu ve Logo MSSQL senkronizasyonu',
     'description': """
@@ -41,6 +41,14 @@ Güvenlik ve Performans:
 - Batch processing desteği
 - Exception handling
 - Multi-language support
+- İptal mekanizması (E-Arşiv) - v1.0.7
+- Orphan iptal kontrolü - v1.0.8
+- Geliştirilmiş hata yönetimi - v1.0.8
+- UUID arama filtreleri düzeltmesi - v1.0.9
+- Unique constraint güncelleme (is_cancellation) - v1.0.10
+- İptal kaydı oluşturmada invoice_id/uuid eksikliği düzeltildi - v1.0.10
+- İptal ilişkisi kurulduğunda asıl faturayı otomatik geçersiz yapma - v1.0.11
+- Cron job translation hatası düzeltildi (Progressive Sync fix) - v1.0.12
 
 Kurulum ve Kullanım:
 ===================

@@ -117,6 +117,29 @@ class e_invoice(models.Model):
         help="E-Arşiv gönderim tipi (SENDING_TYPE)"
     )
 
+    # İptal İlişkisi (v1.0.7)
+    is_cancellation = fields.Boolean(
+        string='İptal Kaydı',
+        default=False,
+        index=True,
+        tracking=True,
+        help="Bu kayıt bir iptal kaydı mı? (profile_id='IPTAL')"
+    )
+    cancelled_invoice_id = fields.Many2one(
+        'e.invoice',
+        string='İptal Edilen Fatura',
+        ondelete='set null',
+        tracking=True,
+        help="Bu iptal kaydının hangi faturayı iptal ettiği"
+    )
+    cancellation_ids = fields.One2many(
+        'e.invoice',
+        'cancelled_invoice_id',
+        domain=[('is_cancellation', '=', True)],
+        string='İptal Kayıtları',
+        help="Bu faturayı iptal eden kayıtlar"
+    )
+
     # Notlar
     notes = fields.Text(string='Notlar')
 
@@ -145,15 +168,18 @@ class e_invoice(models.Model):
         help="Kaydın neden kilitlendiği (opsiyonel)"
     )
 
-    @api.depends('status_code', 'kaynak', 'profile_id')
+    @api.depends('status_code', 'kaynak', 'profile_id', 'is_cancellation')
     def _compute_active(self):
-        """Geçerli faturaları belirle - kaynak tipine göre farklı mantık (v1.0.6)"""
+        """Geçerli faturaları belirle - kaynak tipine göre farklı mantık (v1.0.7)"""
         for record in self:
             if record.kaynak == 'e-arsiv':
-                # ÖNCE profile_id kontrolü (daha kesin ve öncelikli)
-                if record.profile_id == 'IPTAL':
+                # 1. İptal kaydıysa → geçersiz (öncelik 1)
+                if record.is_cancellation:
                     record.gvn_active = False
-                # Sonra status_code kontrolü
+                # 2. Profile ID kontrolü (öncelik 2 - backward compatibility)
+                elif record.profile_id == 'IPTAL':
+                    record.gvn_active = False
+                # 3. Status code kontrolü (öncelik 3 - secondary)
                 # 150: RAPORLANMADAN İPTAL EDİLDİ
                 # 200: FATURA ID BULUNAMADI
                 elif record.status_code in ['150', '200']:
@@ -627,25 +653,33 @@ class e_invoice(models.Model):
             updated_count = 0
             
             for invoice_data in invoices:
-                # UUID unique olduğu için tek başına yeterli (v1.0.6 performans optimizasyonu)
-                existing_invoice = self.search([
-                    ('uuid', '=', invoice_data.get('UUID'))
-                ], limit=1)
+                try:  # Exception handling (v1.0.8)
+                    # UUID unique olduğu için tek başına yeterli (v1.0.6 performans optimizasyonu)
+                    existing_invoice = self.search([
+                        ('uuid', '=', invoice_data.get('UUID'))
+                    ], limit=1)
 
-                if existing_invoice:
-                    # Kilitli kayıtları güncelleme (v1.0.5)
-                    if existing_invoice.is_locked:
-                        _logger.info(f"SOAP Sync: Kilitli kayıt atlandı - {existing_invoice.invoice_id}")
-                        continue
+                    if existing_invoice:
+                        # Kilitli kayıtları güncelleme (v1.0.5)
+                        if existing_invoice.is_locked:
+                            _logger.info(f"SOAP Sync: Kilitli kayıt atlandı - {existing_invoice.invoice_id}")
+                            continue
 
-                    # Güncelle
-                    invoice_vals = self._prepare_invoice_vals_from_soap(invoice_data)
-                    existing_invoice.write(invoice_vals)
-                    updated_count += 1
-                else:
-                    # Yeni oluştur
-                    self.create_from_soap_data(invoice_data)
-                    created_count += 1
+                        # Güncelle
+                        invoice_vals = self._prepare_invoice_vals_from_soap(invoice_data)
+                        existing_invoice.write(invoice_vals)
+                        updated_count += 1
+                    else:
+                        # Yeni oluştur
+                        self.create_from_soap_data(invoice_data)
+                        created_count += 1
+
+                except Exception as e:  # Exception handling (v1.0.8)
+                    invoice_id = invoice_data.get('ID', 'UNKNOWN')
+                    uuid = invoice_data.get('UUID', 'UNKNOWN')
+                    _logger.error("E-Fatura senkronizasyon hatası (Invoice: %s | UUID: %s): %s",
+                                 invoice_id, uuid, str(e), exc_info=True)
+                    continue  # Sonraki faturaya geç
             
             result = {
                 'success': True,
@@ -662,7 +696,7 @@ class e_invoice(models.Model):
                 try:
                     if not pymssql:
                         _logger.warning("Otomatik Logo Sync: pymssql yüklü değil")
-                        result['message'] += _('\n\nLogo Senkronizasyonu: pymssql eksik')
+                        result['message'] += '\n\nLogo Senkronizasyonu: pymssql eksik'
                     else:
                         # MSSQL config al
                         server = config_param.get_param('logo.mssql_server')
@@ -674,7 +708,7 @@ class e_invoice(models.Model):
 
                         if not all([server, database, username, password]):
                             _logger.warning("Otomatik Logo Sync: MSSQL config eksik")
-                            result['message'] += _('\n\nLogo Senkronizasyonu: MSSQL config eksik')
+                            result['message'] += '\n\nLogo Senkronizasyonu: MSSQL config eksik'
                         else:
                             # Filtrelenmiş faturaları al
                             domain = [
@@ -738,15 +772,15 @@ class e_invoice(models.Model):
                                         _logger.error("Logo sync fatura %s: %s", invoice.invoice_id, str(e))
 
                                 conn.close()
-                                result['message'] += _('\n\nLogo Sync: %d bulundu, %d bulunamadı') % (stats['found'], stats['not_found'])
+                                result['message'] += '\n\nLogo Sync: %d bulundu, %d bulunamadı' % (stats['found'], stats['not_found'])
                             else:
-                                result['message'] += _('\n\nLogo Sync: Fatura bulunamadı')
+                                result['message'] += '\n\nLogo Sync: Fatura bulunamadı'
 
                 except Exception as e:
                     import traceback
                     error_trace = traceback.format_exc()
                     _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s\n%s", str(e), error_trace)
-                    result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s') % str(e)
+                    result['message'] += '\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s' % str(e)
             
             return result
             
@@ -893,6 +927,7 @@ class e_invoice(models.Model):
             # 6. Response'u parse et ve kaydet
             created_count = 0
             updated_count = 0
+            cancellation_list = []  # İptal kayıtları için temp liste (v1.0.7)
 
             if invoices:
                 for invoice_data in invoices:
@@ -900,9 +935,18 @@ class e_invoice(models.Model):
                         # Mevcut kayıt kontrolü (UUID ile - v1.0.6)
                         invoice_id = invoice_data.get('ID') or invoice_data.get('HEADER', {}).get('INVOICE_ID')
                         uuid = invoice_data.get('UUID') or invoice_data.get('HEADER', {}).get('UUID')
+                        header = invoice_data.get('HEADER', {})
+                        profile_id = header.get('PROFILE_ID')
+
+                        # İPTAL KONTROLÜ (v1.0.7) - İptal kayıtlarını temp liste'ye ekle
+                        if profile_id == 'IPTAL':
+                            cancellation_list.append(invoice_data)
+                            _logger.info(f"E-Arşiv İptal Kaydı Tespit Edildi: {invoice_id}")
+                            continue  # Normal işleme devam etme
 
                         existing_invoice = self.search([
-                            ('uuid', '=', uuid)
+                            ('uuid', '=', uuid),
+                            ('is_cancellation', '=', False)  # Sadece normal kayıtları ara (v1.0.9)
                         ], limit=1)
 
                         if existing_invoice:
@@ -915,6 +959,10 @@ class e_invoice(models.Model):
                             invoice_vals = self._prepare_earsiv_vals_from_soap(invoice_data)
                             existing_invoice.write(invoice_vals)
                             updated_count += 1
+
+                            # ORPHAN İPTAL KONTROLÜ (v1.0.8)
+                            existing_invoice._check_and_link_orphan_cancellations(invoice_id)
+
                             _logger.info("E-Arşiv fatura güncellendi: %s", invoice_id)
                         else:
                             # Yeni oluştur
@@ -922,10 +970,91 @@ class e_invoice(models.Model):
                             created_count += 1
 
                     except Exception as e:
-                        _logger.error("E-Arşiv fatura kaydedilirken hata: %s", str(e))
+                        # Detaylı error logging (v1.0.8)
+                        invoice_id = invoice_data.get('ID') or invoice_data.get('HEADER', {}).get('INVOICE_ID')
+                        uuid = invoice_data.get('UUID') or invoice_data.get('HEADER', {}).get('UUID')
+                        _logger.error("E-Arşiv fatura kaydedilirken hata (Invoice: %s | UUID: %s): %s",
+                                     invoice_id, uuid, str(e), exc_info=True)
                         continue
             else:
                 _logger.info("E-Arşiv fatura bulunamadı")
+
+            # 7. İPTAL KAYITLARINI İŞLE (v1.0.7)
+            if cancellation_list:
+                _logger.info(f"Toplam {len(cancellation_list)} iptal kaydı işlenecek")
+
+                for cancel_data in cancellation_list:
+                    try:
+                        header = cancel_data.get('HEADER', {})
+                        cancel_invoice_id = cancel_data.get('ID') or header.get('INVOICE_ID')
+                        cancel_uuid = cancel_data.get('UUID') or header.get('UUID')
+
+                        # İptal kaydını oluştur veya güncelle
+                        existing_cancel = self.search([
+                            ('uuid', '=', cancel_uuid),
+                            ('is_cancellation', '=', True)  # Sadece iptal kayıtlarını ara (v1.0.9)
+                        ], limit=1)
+
+                        if not existing_cancel:
+                            # Yeni iptal kaydı oluştur
+                            cancel_vals = self._prepare_earsiv_vals_from_soap(cancel_data)
+                            cancel_vals['is_cancellation'] = True
+                            cancel_vals['invoice_id'] = cancel_invoice_id  # v1.0.10: Eksik alan eklendi
+                            cancel_vals['uuid'] = cancel_uuid  # v1.0.10: Eksik alan eklendi
+
+                            # Aynı invoice_id'ye sahip asıl faturayı bul
+                            original_invoice = self.search([
+                                ('invoice_id', '=', cancel_invoice_id),
+                                ('kaynak', '=', 'e-arsiv'),
+                                ('is_cancellation', '=', False)
+                            ], limit=1, order='create_date desc')
+
+                            if original_invoice:
+                                cancel_vals['cancelled_invoice_id'] = original_invoice.id
+                                _logger.info(f"İptal kaydı - Asıl fatura bulundu: {original_invoice.invoice_id} (ID: {original_invoice.id})")
+                            else:
+                                _logger.warning(f"İptal kaydı - Asıl fatura bulunamadı: {cancel_invoice_id}")
+
+                            self.create(cancel_vals)
+                            created_count += 1
+                            _logger.info(f"İptal kaydı oluşturuldu: {cancel_invoice_id}")
+
+                            # Asıl faturayı geçersiz yap (v1.0.11)
+                            if original_invoice and not original_invoice.is_locked:
+                                original_invoice.write({'gvn_active': False})
+                                _logger.info(f"Asıl fatura geçersiz yapıldı: {original_invoice.invoice_id}")
+                        else:
+                            # Mevcut iptal kaydını güncelle
+                            if not existing_cancel.is_locked:
+                                cancel_vals = self._prepare_earsiv_vals_from_soap(cancel_data)
+                                cancel_vals['is_cancellation'] = True
+
+                                # İlişki yoksa ekle
+                                if not existing_cancel.cancelled_invoice_id:
+                                    original_invoice = self.search([
+                                        ('invoice_id', '=', cancel_invoice_id),
+                                        ('kaynak', '=', 'e-arsiv'),
+                                        ('is_cancellation', '=', False)
+                                    ], limit=1, order='create_date desc')
+
+                                    if original_invoice:
+                                        cancel_vals['cancelled_invoice_id'] = original_invoice.id
+
+                                existing_cancel.write(cancel_vals)
+                                updated_count += 1
+                                _logger.info(f"İptal kaydı güncellendi: {cancel_invoice_id}")
+
+                                # Asıl faturayı geçersiz yap (v1.0.11)
+                                if existing_cancel.cancelled_invoice_id and not existing_cancel.cancelled_invoice_id.is_locked:
+                                    existing_cancel.cancelled_invoice_id.write({'gvn_active': False})
+                                    _logger.info(f"Asıl fatura geçersiz yapıldı: {existing_cancel.cancelled_invoice_id.invoice_id}")
+
+                    except Exception as e:
+                        # Detaylı error logging (v1.0.8)
+                        cancel_uuid = cancel_data.get('UUID') or cancel_data.get('HEADER', {}).get('UUID')
+                        _logger.error("İptal kaydı işlenirken hata (Invoice: %s | UUID: %s): %s",
+                                     cancel_invoice_id, cancel_uuid, str(e), exc_info=True)
+                        continue
 
             result = {
                 'success': True,
@@ -941,7 +1070,7 @@ class e_invoice(models.Model):
                 try:
                     if not pymssql:
                         _logger.warning("Otomatik Logo Sync (E-Arşiv): pymssql yüklü değil")
-                        result['message'] += _('\n\nLogo Senkronizasyonu: pymssql eksik')
+                        result['message'] += '\n\nLogo Senkronizasyonu: pymssql eksik'
                     else:
                         # MSSQL config al
                         server = soap_config.get_param('logo.mssql_server')
@@ -953,7 +1082,7 @@ class e_invoice(models.Model):
 
                         if not all([server, database, username, password]):
                             _logger.warning("Otomatik Logo Sync (E-Arşiv): MSSQL config eksik")
-                            result['message'] += _('\n\nLogo Senkronizasyonu: MSSQL config eksik')
+                            result['message'] += '\n\nLogo Senkronizasyonu: MSSQL config eksik'
                         else:
                             # E-Arşiv faturaları al (her zaman OUT yönü)
                             domain = [
@@ -1014,20 +1143,20 @@ class e_invoice(models.Model):
                                         _logger.error("Logo sync E-Arşiv fatura %s: %s", invoice.invoice_id, str(e))
 
                                 conn.close()
-                                result['message'] += _('\n\nLogo Sync: %d bulundu, %d bulunamadı') % (stats['found'], stats['not_found'])
+                                result['message'] += '\n\nLogo Sync: %d bulundu, %d bulunamadı' % (stats['found'], stats['not_found'])
                             else:
-                                result['message'] += _('\n\nLogo Sync: E-Arşiv fatura bulunamadı')
+                                result['message'] += '\n\nLogo Sync: E-Arşiv fatura bulunamadı'
 
                 except Exception as e:
                     import traceback
                     error_trace = traceback.format_exc()
                     _logger.warning("Otomatik Logo senkronizasyonu başarısız: %s\n%s", str(e), error_trace)
-                    result['message'] += _('\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s') % str(e)
+                    result['message'] += '\n\nLogo Senkronizasyonu: Otomatik sync başarısız - %s' % str(e)
 
             return result
 
         except Exception as e:
-            _logger.error("E-Arşiv SOAP senkronizasyon hatası: %s", str(e))
+            _logger.error("E-Arşiv SOAP senkronizasyon hatası: %s", str(e), exc_info=True)
             return {
                 'success': False,
                 'error': str(e)
@@ -1099,6 +1228,11 @@ class e_invoice(models.Model):
         # Yeni kayıt oluştur
         new_record = self.create(invoice_vals)
         _logger.info("Yeni E-Arşiv fatura oluşturuldu: %s", invoice_vals['invoice_id'])
+
+        # ORPHAN İPTAL KONTROLÜ (v1.0.8)
+        # Eğer bu fatura için daha önce iptal kaydı gelmişse, şimdi ilişkilendir
+        new_record._check_and_link_orphan_cancellations(invoice_vals['invoice_id'])
+
         return new_record
 
     def _prepare_earsiv_vals_from_soap(self, soap_data):
@@ -1133,6 +1267,51 @@ class e_invoice(models.Model):
         }
 
         return vals
+
+    def _check_and_link_orphan_cancellations(self, invoice_id):
+        """
+        Asıl fatura oluşturulduğunda orphan iptal kayıtlarını kontrol et ve ilişkilendir (v1.0.8)
+
+        Bu metod asıl fatura oluşturulduğunda/güncellendiğinde çağrılır.
+        Eğer bu fatura numarası için daha önce iptal kaydı gelmişse ama ilişki kurulmamışsa,
+        şimdi ilişkiyi kurar.
+
+        Args:
+            invoice_id (str): Fatura numarası (invoice_id field'ı)
+
+        Returns:
+            int: İlişkilendirilen orphan iptal kayıt sayısı
+        """
+        # Bu fatura numarası için ilişki kurulmamış iptal kayıtlarını ara
+        orphan_cancellations = self.search([
+            ('invoice_id', '=', invoice_id),
+            ('kaynak', '=', 'e-arsiv'),
+            ('is_cancellation', '=', True),
+            ('cancelled_invoice_id', '=', False)  # İlişki kurulmamış
+        ])
+
+        linked_count = 0
+        if orphan_cancellations:
+            for cancel_record in orphan_cancellations:
+                # Kilitli kayıtları atla
+                if cancel_record.is_locked:
+                    _logger.warning(f"Orphan iptal kaydı kilitli, atlandı: {invoice_id} (İptal UUID: {cancel_record.uuid})")
+                    continue
+
+                # İlişkiyi kur
+                try:
+                    cancel_record.write({'cancelled_invoice_id': self.id})
+                    linked_count += 1
+                    _logger.info(f"Orphan iptal kaydı ilişkilendirildi: {invoice_id} (İptal UUID: {cancel_record.uuid})")
+
+                    # Asıl faturayı geçersiz yap (v1.0.11)
+                    if not self.is_locked:
+                        self.write({'gvn_active': False})
+                        _logger.info(f"Orphan kontrol: Asıl fatura geçersiz yapıldı: {self.invoice_id}")
+                except Exception as e:
+                    _logger.error(f"Orphan iptal ilişkilendirme hatası ({invoice_id}, UUID: {cancel_record.uuid}): {str(e)}")
+
+        return linked_count
 
     @api.model
     def _test_soap_connection(self):
