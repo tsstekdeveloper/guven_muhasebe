@@ -80,7 +80,7 @@
         <field name="name">e.invoice.not.in.logo.list</field>
         <field name="model">e.invoice</field>
         <field name="arch" type="xml">
-            <list string="Logo'da Bulunmayan Faturalar" default_order="direction, issue_date desc">
+            <list string="Logo'da Bulunmayan Faturalar" default_order="issue_date asc, invoice_id asc">
                 <field name="invoice_id" string="Fatura No" optional="show"/>
                 <field name="direction" string="Yön" optional="show"/>
                 <field name="kaynak" string="Kaynak" optional="show"/>
@@ -89,6 +89,7 @@
                 <field name="customer" string="Müşteri" optional="show"/>
                 <field name="tax_exclusive_total_amount" string="Vergisiz Tutar" sum="Toplam" optional="show"/>
                 <field name="tax_inclusive_total_amount" string="Vergi Dahil Tutar" sum="Toplam" optional="show"/>
+                <field name="payable_amount" string="Ödenecek Tutar" sum="Toplam" optional="show"/>
             </list>
         </field>
     </record>
