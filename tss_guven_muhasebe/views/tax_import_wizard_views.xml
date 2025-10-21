@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================ -->
+    <!-- Tax Detail Import Wizard Views (v1.0.6)     -->
+    <!-- ============================================ -->
+
+    <!-- Wizard Form View -->
+    <record id="view_e_invoice_tax_detail_import_wizard_form" model="ir.ui.view">
+        <field name="name">e.invoice.tax.detail.import.wizard.form</field>
+        <field name="model">e.invoice.tax.detail.import.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Detaylı Vergi Excel İmport">
+                <group>
+                    <group colspan="2">
+                        <div class="alert alert-info" role="alert">
+                            <h4>📊 Excel Format Bilgisi</h4>
+                            <p>
+                                <strong>Beklenen Format:</strong> İzibiz portalından indirilen 66 sütunlu detaylı fatura raporu
+                            </p>
+                            <ul>
+                                <li>✅ Tür, Tarih, Belge No, VKN/TCKN, Ünvan...</li>
+                                <li>✅ KDV detayları (%0, %1, %8, %10, %18, %20)</li>
+                                <li>✅ Tevkifat oranları (2/10, 3/10, 4/10, 5/10, 7/10, 9/10)</li>
+                                <li>✅ Stopaj bilgileri</li>
+                                <li>✅ Ek bilgiler (İrsaliye, Sipariş vb.)</li>
+                            </ul>
+                            <p class="text-muted">
+                                <small>
+                                    <strong>Not:</strong> Dosya .xls veya .xlsx formatında olmalıdır.<br/>
+                                    Duplicate kayıtlar otomatik olarak atlanır (aynı belge_no + tarih).
+                                </small>
+                            </p>
+                        </div>
+                    </group>
+                </group>
+
+                <group>
+                    <group string="Dosya Seçimi">
+                        <field name="excel_file" filename="file_name" required="1"/>
+                        <field name="file_name" invisible="1"/>
+                    </group>
+                    <group string="Seçenekler">
+                        <field name="validate_only"/>
+                    </group>
+                </group>
+
+                <group invisible="not progress">
+                    <group colspan="2">
+                        <field name="progress" readonly="1"/>
+                    </group>
+                </group>
+
+                <group invisible="not result_summary">
+                    <group colspan="2">
+                        <field name="result_summary" readonly="1" nolabel="1"/>
+                    </group>
+                </group>
+
+                <group invisible="not error_file" string="📥 Hata Raporu İndir">
+                    <group colspan="2">
+                        <field name="error_file" filename="error_file_name" readonly="1"/>
+                        <field name="error_file_name" invisible="1"/>
+                    </group>
+                </group>
+
+                <footer>
+                    <button name="action_import_excel"
+                            string="İmport Et"
+                            type="object"
+                            class="btn-primary"
+                            invisible="result_summary"/>
+                    <button string="Kapat" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Wizard Action -->
+    <record id="action_e_invoice_tax_detail_import_wizard" model="ir.actions.act_window">
+        <field name="name">Detaylı Vergi Excel İmport</field>
+        <field name="res_model">e.invoice.tax.detail.import.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

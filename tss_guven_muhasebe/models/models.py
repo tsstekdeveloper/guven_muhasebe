@@ -32,6 +32,21 @@ class e_invoice(models.Model):
          'Bu fatura kaydı zaten mevcut! (Aynı invoice_id, kaynak ve UUID kombinasyonu tekrar edilemez.)')
     ]
 
+    # SOAP Field Whitelist (v1.0.14) - Excel import will NEVER touch these fields
+    SOAP_MANAGED_FIELDS = [
+        'invoice_id', 'uuid', 'sender', 'receiver', 'supplier', 'customer',
+        'issue_date', 'create_date_ws', 'payable_amount',
+        'tax_exclusive_total_amount', 'tax_inclusive_total_amount',
+        'line_extension_amount', 'allowance_total_amount',
+        'profile_id', 'invoice_type_code', 'status', 'status_description',
+        'status_code', 'response_code', 'response_description',
+        'gib_status_code', 'gib_status_description',
+        'envelope_identifier', 'direction', 'kaynak', 'notes',
+        'from_field', 'to_field', 'is_cancellation', 'cancelled_invoice_id',
+        'is_locked', 'locked_by_id', 'locked_date', 'lock_reason',
+        'exists_in_logo', 'logo_record_id', 'gvn_active', 'active',
+    ]
+
     # Ana Bilgiler
     invoice_id = fields.Char(string='Fatura ID', required=True, index=True)
     uuid = fields.Char(string='UUID', required=True, index=True)
@@ -168,6 +183,121 @@ class e_invoice(models.Model):
         help="Kaydın neden kilitlendiği (opsiyonel)"
     )
 
+    # ==================================================================
+    # DETAYLI VERGİ BİLGİLERİ (v1.0.14 - Excel Import)
+    # ==================================================================
+
+    # A. Basic Fields (8 fields)
+    birim = fields.Char(string='Birim', help='Para birimi (TRY, USD, EUR, vb.)')
+    kur = fields.Float(string='Kur', digits=(16, 4), help='Döviz kuru')
+    odenecek_tutar = fields.Float(string='Ödenecek Tutar', digits=(16, 2))
+    odenecek_tutar_tl = fields.Float(string='Ödenecek Tutar (TL)', digits=(16, 2))
+    matrah = fields.Float(string='Matrah', digits=(16, 2))
+    matrah_tl = fields.Float(string='Matrah (TL)', digits=(16, 2))
+    iskonto_tutari = fields.Float(string='İskonto Tutarı', digits=(16, 2))
+    iskonto_tutari_tl = fields.Float(string='İskonto Tutarı (TL)', digits=(16, 2))
+
+    # B. KDV Details (30 fields)
+    # KDV %0
+    kdv_0_matrah = fields.Float(string='KDV(%0) Matrah', digits=(16, 2))
+    kdv_0_matrah_tl = fields.Float(string='KDV(%0) Matrah (TL)', digits=(16, 2))
+    kdv_0 = fields.Float(string='KDV(%0)', digits=(16, 2))
+
+    # KDV %1
+    kdv_1_matrah = fields.Float(string='KDV(%1) Matrah', digits=(16, 2))
+    kdv_1_matrah_tl = fields.Float(string='KDV(%1) Matrah (TL)', digits=(16, 2))
+    kdv_1 = fields.Float(string='KDV(%1)', digits=(16, 2))
+    kdv_1_tl = fields.Float(string='KDV(%1) (TL)', digits=(16, 2))
+
+    # KDV %8
+    kdv_8_matrah = fields.Float(string='KDV(%8) Matrah', digits=(16, 2))
+    kdv_8_matrah_tl = fields.Float(string='KDV(%8) Matrah (TL)', digits=(16, 2))
+    kdv_8 = fields.Float(string='KDV(%8)', digits=(16, 2))
+    kdv_8_tl = fields.Float(string='KDV(%8) (TL)', digits=(16, 2))
+
+    # KDV %10
+    kdv_10_matrah = fields.Float(string='KDV(%10) Matrah', digits=(16, 2))
+    kdv_10_matrah_tl = fields.Float(string='KDV(%10) Matrah (TL)', digits=(16, 2))
+    kdv_10 = fields.Float(string='KDV(%10)', digits=(16, 2))
+    kdv_10_tl = fields.Float(string='KDV(%10) (TL)', digits=(16, 2))
+
+    # KDV %18
+    kdv_18_matrah = fields.Float(string='KDV(%18) Matrah', digits=(16, 2))
+    kdv_18_matrah_tl = fields.Float(string='KDV(%18) Matrah (TL)', digits=(16, 2))
+    kdv_18 = fields.Float(string='KDV(%18)', digits=(16, 2))
+    kdv_18_tl = fields.Float(string='KDV(%18) (TL)', digits=(16, 2))
+
+    # KDV %20
+    kdv_20_matrah = fields.Float(string='KDV(%20) Matrah', digits=(16, 2))
+    kdv_20_matrah_tl = fields.Float(string='KDV(%20) Matrah (TL)', digits=(16, 2))
+    kdv_20 = fields.Float(string='KDV(%20)', digits=(16, 2))
+    kdv_20_tl = fields.Float(string='KDV(%20) (TL)', digits=(16, 2))
+
+    # KDV Toplamları
+    toplam_kdv = fields.Float(string='Toplam KDV', digits=(16, 2))
+    toplam_kdv_tl = fields.Float(string='Toplam KDV (TL)', digits=(16, 2))
+    toplam_vergi = fields.Float(string='Toplam Vergi', digits=(16, 2))
+
+    # C. Tevkifat (12 fields)
+    tevkifat_2_10_matrah = fields.Float(string='2/10 Tevkifat Matrahı', digits=(16, 2))
+    tevkifat_2_10_kdv = fields.Float(string='2/10 Tevkifat KDVsi', digits=(16, 2))
+    tevkifat_3_10_matrah = fields.Float(string='3/10 Tevkifat Matrahı', digits=(16, 2))
+    tevkifat_3_10_kdv = fields.Float(string='3/10 Tevkifat KDVsi', digits=(16, 2))
+    tevkifat_4_10_matrah = fields.Float(string='4/10 Tevkifat Matrahı', digits=(16, 2))
+    tevkifat_4_10_kdv = fields.Float(string='4/10 Tevkifat KDVsi', digits=(16, 2))
+    tevkifat_5_10_matrah = fields.Float(string='5/10 Tevkifat Matrahı', digits=(16, 2))
+    tevkifat_5_10_kdv = fields.Float(string='5/10 Tevkifat KDVsi', digits=(16, 2))
+    tevkifat_7_10_matrah = fields.Float(string='7/10 Tevkifat Matrahı', digits=(16, 2))
+    tevkifat_7_10_kdv = fields.Float(string='7/10 Tevkifat KDVsi', digits=(16, 2))
+    tevkifat_9_10_matrah = fields.Float(string='9/10 Tevkifat Matrahı', digits=(16, 2))
+    tevkifat_9_10_kdv = fields.Float(string='9/10 Tevkifat KDVsi', digits=(16, 2))
+
+    # I. Stopaj (3 fields)
+    stopaj_tutari = fields.Float(string='Stopaj Tutarı', digits=(16, 2))
+    stopaj_tutari_matrah = fields.Float(string='Stopaj Tutarı Matrah', digits=(16, 2))
+    stopaj_tutari_tl = fields.Float(string='Stopaj Tutarı (TL)', digits=(16, 2))
+
+    # İ. Fatura Tip ve Durum (3 fields)
+    ft_tip = fields.Char(string='Kayıt Tipi', help='Excel Tip sütunundan alınan fatura tipi bilgisi')
+    ft_durum = fields.Char(string='Fatura Durumu', help='Excel Durum sütunundan alınan durum bilgisi')
+    harici_iptal = fields.Boolean(
+        string='Harici Yolla İptal',
+        default=False,
+        tracking=True,
+        help='Fatura harici bir sistemle (manuel veya başka kanal) iptal edildi mi?'
+    )
+
+    # J. Konaklama Vergisi (4 fields)
+    konaklama_vergisi_2 = fields.Float(string='Konaklama Vergisi (%2)', digits=(16, 2))
+    konaklama_vergisi_2_matrah = fields.Float(string='Konaklama Vergisi (%2) Matrah', digits=(16, 2))
+    konaklama_vergisi_2_tl = fields.Float(string='Konaklama Vergisi (%2) (TL)', digits=(16, 2))
+    konaklama_vergisi_2_tl_matrah = fields.Float(string='Konaklama Vergisi (%2) (TL) Matrah', digits=(16, 2))
+
+    # K. Tevkifat Info (2 fields)
+    tevkifat_kodu = fields.Char(string='Tevkifat Kodu')
+    tevkifat_aciklamasi = fields.Text(string='Tevkifat Açıklaması')
+
+    # L. Muafiyet Info (2 fields)
+    vergi_muafiyet_kodu = fields.Char(string='Vergi Muafiyet Kodu')
+    vergi_muafiyet_sebebi = fields.Text(string='Vergi Muafiyet Sebebi')
+
+    # M. Excel Tracking Fields (3 fields)
+    excel_imported = fields.Boolean(
+        string='Excel İmport Edildi',
+        default=False,
+        help='Bu faturanın detaylı vergi bilgileri Excel\'den aktarıldı'
+    )
+    excel_import_date = fields.Datetime(
+        string='Excel İmport Tarihi',
+        readonly=True,
+        help='Detaylı vergi bilgilerinin aktarıldığı tarih'
+    )
+    excel_import_user_id = fields.Many2one(
+        'res.users',
+        string='Excel İmport Eden Kullanıcı',
+        readonly=True,
+        help='Detaylı vergi bilgilerini aktaran kullanıcı'
+    )
     @api.depends('status_code', 'kaynak', 'profile_id', 'is_cancellation')
     def _compute_active(self):
         """Geçerli faturaları belirle - kaynak tipine göre farklı mantık (v1.0.7)"""
@@ -481,6 +611,54 @@ class e_invoice(models.Model):
             'params': {
                 'title': 'Başarılı',
                 'message': f'{len(self)} kayıdın kilidi kaldırıldı.',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+
+    def action_cancel_and_lock(self):
+        """Faturayı iptal durumuna çek (status_code=120) ve kilitle"""
+        locked_count = 0
+        already_locked_count = 0
+
+        for record in self:
+            # Status code'u 120 olarak ayarla (Belge Ret Edildi)
+            record.write({
+                'status_code': '120',
+            })
+
+            # Chatter'a iptal mesajı ekle
+            record.message_post(
+                body=f"Fatura iptal durumuna çekildi (Status Code: 120 - Belge Ret Edildi) ve kilitlendi.<br/>"
+                     f"İşlemi yapan: {self.env.user.name}",
+                subject="Fatura İptal Edildi ve Kilitlendi"
+            )
+
+            # Eğer zaten kilitli değilse kilitle
+            if not record.is_locked:
+                record.write({
+                    'is_locked': True,
+                    'locked_by_id': self.env.user.id,
+                    'locked_date': fields.Datetime.now(),
+                    'lock_reason': 'Fatura iptal durumuna çekildi (Status Code: 120)',
+                })
+                locked_count += 1
+            else:
+                already_locked_count += 1
+
+        # Bildirim mesajını hazırla
+        message_parts = [f'{len(self)} fatura iptal durumuna çekildi.']
+        if locked_count > 0:
+            message_parts.append(f'{locked_count} kayıt kilitlendi.')
+        if already_locked_count > 0:
+            message_parts.append(f'{already_locked_count} kayıt zaten kilitliydi.')
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Başarılı',
+                'message': ' '.join(message_parts),
                 'type': 'success',
                 'sticky': False,
             }
@@ -1425,11 +1603,6 @@ class e_invoice(models.Model):
             # Config parametrelerini al
             ICPSudo = self.env['ir.config_parameter'].sudo()
 
-            # Enabled kontrolü
-            enabled = ICPSudo.get_param('cron.progressive_sync_enabled', 'False') == 'True'
-            if not enabled:
-                return
-
             # Saat kontrolü
             start_hour = int(ICPSudo.get_param('cron.progressive_start_hour', '8'))
             end_hour = int(ICPSudo.get_param('cron.progressive_end_hour', '20'))
@@ -1457,12 +1630,12 @@ class e_invoice(models.Model):
                 from datetime import timedelta
                 next_date = current_date + timedelta(days=7)
 
-                # Bitiş tarihini geçtiyse başa dön
+                # Bitiş tarihini geçtiyse durur
                 if next_date > end_date:
-                    _logger.info("Progressive Sync: Bitiş tarihine ulaşıldı, başa dönülüyor...")
-                    current_date = start_date
-                else:
-                    current_date = next_date
+                    _logger.info("Progressive Sync: Bitiş tarihine ulaşıldı, yapılacak iş yok.")
+                    return
+
+                current_date = next_date
             else:
                 current_date = start_date
 
@@ -1515,15 +1688,12 @@ class e_invoice(models.Model):
 
     @api.model
     def cron_retrospective_sync(self):
-        """Retrospective Sync - X gün önceki tarihin faturalarını senkronize et"""
+        """Retrospective Sync - Son X günden bugüne kadar 7 günlük periyotlarla senkronizasyon"""
         try:
+            from datetime import timedelta
+
             # Config parametrelerini al
             ICPSudo = self.env['ir.config_parameter'].sudo()
-
-            # Enabled kontrolü
-            enabled = ICPSudo.get_param('cron.retrospective_sync_enabled', 'False') == 'True'
-            if not enabled:
-                return
 
             # Saat kontrolü
             start_hour = int(ICPSudo.get_param('cron.retrospective_start_hour', '8'))
@@ -1532,20 +1702,42 @@ class e_invoice(models.Model):
                 _logger.info("Retrospective Sync: Çalışma saatleri dışında, atlanıyor...")
                 return
 
-            # Kaç gün önce parametresi
-            days_ago = int(ICPSudo.get_param('cron.retrospective_days_ago', '3'))
+            # Parametreleri al
+            days_ago = int(ICPSudo.get_param('cron.retrospective_days_ago', '10'))
+            last_sync_date_str = ICPSudo.get_param('cron.retrospective_last_sync_date')
 
-            # Hedef tarihi hesapla
-            target_date = fields.Date.subtract(fields.Date.today(), days=days_ago)
-            target_date_str = target_date.strftime('%Y-%m-%d')
+            # Bugünün tarihi
+            today = fields.Date.today()
 
-            _logger.info("Retrospective Sync başlatılıyor: %s (%d gün önce)", target_date_str, days_ago)
+            # Başlangıç tarihi (X gün önce)
+            start_date = fields.Date.subtract(today, days=days_ago)
+
+            # Son senkronize tarihi belirle
+            if last_sync_date_str:
+                current_date = fields.Date.from_string(last_sync_date_str)
+                # 7 gün ekle
+                next_date = current_date + timedelta(days=7)
+
+                # Bugüne ulaştıysa durur
+                if next_date > today:
+                    _logger.info("Retrospective Sync: Bugüne ulaşıldı, yapılacak iş yok.")
+                    return
+
+                current_date = next_date
+            else:
+                # İlk çalıştırma
+                current_date = start_date
+
+            # 7 günlük periyodu hesapla
+            period_end = min(current_date + timedelta(days=6), today)
+
+            _logger.info("Retrospective Sync başlatılıyor: %s - %s", current_date, period_end)
 
             # E-Fatura Gelen senkronizasyonu
             try:
                 result_in = self.sync_invoices_from_soap(
-                    target_date_str,
-                    target_date_str,
+                    current_date.strftime('%Y-%m-%d'),
+                    period_end.strftime('%Y-%m-%d'),
                     'IN'
                 )
                 _logger.info("Retrospective Sync - E-Fatura Gelen: %s", result_in)
@@ -1555,8 +1747,8 @@ class e_invoice(models.Model):
             # E-Fatura Giden senkronizasyonu
             try:
                 result_out = self.sync_invoices_from_soap(
-                    target_date_str,
-                    target_date_str,
+                    current_date.strftime('%Y-%m-%d'),
+                    period_end.strftime('%Y-%m-%d'),
                     'OUT'
                 )
                 _logger.info("Retrospective Sync - E-Fatura Giden: %s", result_out)
@@ -1566,31 +1758,30 @@ class e_invoice(models.Model):
             # E-Arşiv senkronizasyonu
             try:
                 result_earsiv = self.sync_earsiv_from_soap(
-                    target_date_str,
-                    target_date_str
+                    current_date.strftime('%Y-%m-%d'),
+                    period_end.strftime('%Y-%m-%d')
                 )
                 _logger.info("Retrospective Sync - E-Arşiv: %s", result_earsiv)
             except Exception as e:
                 _logger.error("Retrospective Sync - E-Arşiv hatası: %s", str(e))
 
-            _logger.info("Retrospective Sync tamamlandı: %s", target_date_str)
+            # Son senkronize tarihi güncelle (başlangıç tarihini kaydet, böylece +7 gün doğru çalışır)
+            ICPSudo.set_param('cron.retrospective_last_sync_date', current_date.strftime('%Y-%m-%d'))
+
+            _logger.info("Retrospective Sync tamamlandı. Sync edildi: %s - %s, Sonraki başlangıç: %s",
+                        current_date, period_end, (current_date + timedelta(days=7)).strftime('%Y-%m-%d'))
 
         except Exception as e:
             _logger.error("Retrospective Sync genel hatası: %s", str(e))
 
     @api.model
     def cron_logo_monthly_sync(self):
-        """Logo Monthly Sync - 7 günlük periyotlarla Logo senkronizasyonu"""
+        """Logo Monthly Sync - Aylık (30 günlük) periyotlarla Logo senkronizasyonu"""
         try:
             from datetime import timedelta
 
             # Config parametrelerini al
             ICPSudo = self.env['ir.config_parameter'].sudo()
-
-            # Enabled kontrolü
-            enabled = ICPSudo.get_param('cron.logo_monthly_sync_enabled', 'False') == 'True'
-            if not enabled:
-                return
 
             # Saat kontrolü
             start_hour = int(ICPSudo.get_param('cron.logo_monthly_start_hour', '8'))
@@ -1615,18 +1806,18 @@ class e_invoice(models.Model):
             # Son senkronize tarihi belirle
             if last_sync_date_str:
                 current_date = fields.Date.from_string(last_sync_date_str)
-                # 7 gün ekle (bir sonraki periyoda geç)
-                current_date = current_date + timedelta(days=7)
+                # 30 gün ekle (bir sonraki periyoda geç)
+                current_date = current_date + timedelta(days=30)
 
-                # Bitiş tarihini geçtiyse başa dön
+                # Bitiş tarihini geçtiyse durur
                 if current_date > end_date:
-                    _logger.info("Logo Monthly Sync: Bitiş tarihine ulaşıldı, başa dönülüyor...")
-                    current_date = start_date
+                    _logger.info("Logo Monthly Sync: Bitiş tarihine ulaşıldı, yapılacak iş yok.")
+                    return
             else:
                 current_date = start_date
 
-            # 7 günlük periyot sonu hesapla
-            period_end = current_date + timedelta(days=6)
+            # 30 günlük periyot sonu hesapla
+            period_end = current_date + timedelta(days=29)
             period_end = min(period_end, end_date)
 
             _logger.info("Logo Monthly Sync başlatılıyor: %s - %s", current_date, period_end)
@@ -1747,7 +1938,7 @@ class e_invoice(models.Model):
             ICPSudo.set_param('cron.logo_monthly_last_sync_date', current_date.strftime('%Y-%m-%d'))
 
             _logger.info("Logo Monthly Sync tamamlandı. Sync edildi: %s - %s, Sonraki başlangıç: %s",
-                        current_date, period_end, (current_date + timedelta(days=7)).strftime('%Y-%m-%d'))
+                        current_date, period_end, (current_date + timedelta(days=30)).strftime('%Y-%m-%d'))
 
         except Exception as e:
             _logger.error("Logo Monthly Sync genel hatası: %s", str(e))
@@ -3712,3 +3903,435 @@ class EarsivExcelImportWizard(models.TransientModel):
                 raise  # Format hatası mesajını aynen göster
             else:
                 raise UserError(_("Import hatası: %s") % str(e))
+
+
+# ==============================================================================
+# DETAYLI VERGİ EXCEL IMPORT WIZARD (v1.0.6)
+# ==============================================================================
+
+
+
+# ==============================================================================
+# DETAYLI VERGİ EXCEL IMPORT WIZARD (v1.0.14 - UUID Matching)
+# ==============================================================================
+
+class EInvoiceTaxDetailImportWizard(models.TransientModel):
+    """
+    İzibiz portalından indirilen 159 sütunlu detaylı fatura Excel'ini import eder.
+    UUID (ETTN) bazlı eşleme ile e.invoice kayıtlarını günceller.
+    ✅ ONLY UPDATE - never INSERT
+    ✅ Match by UUID (ETTN column)
+    ✅ 141 tax field support
+    """
+    _name = 'e.invoice.tax.detail.import.wizard'
+    _description = 'Detaylı Vergi Excel İmport Wizard (v1.0.14)'
+
+    excel_file = fields.Binary(string='Excel Dosyası', required=True, attachment=True)
+    file_name = fields.Char(string='Dosya Adı', readonly=True)
+    validate_only = fields.Boolean(
+        string='Sadece Kontrol Et (Güncelleme Yapma)',
+        default=False,
+        help='İşaretlenirse sadece dosya kontrol edilir, güncelleme yapılmaz'
+    )
+    progress = fields.Text(string='İşlem Durumu', readonly=True)
+    result_summary = fields.Html(string='Sonuç Özeti', readonly=True)
+    error_file = fields.Binary(string='Hata Raporu', readonly=True, attachment=True)
+    error_file_name = fields.Char(string='Hata Raporu Dosya Adı', readonly=True)
+
+    def _safe_float(self, value):
+        """Convert various types to float safely"""
+        if value is None or value == '':
+            return 0.0
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            # String ise temizle
+            if isinstance(value, str):
+                # Türkçe rakam formatını temizle
+                value = value.replace('.', '').replace(',', '.')
+                return float(value) if value else 0.0
+            return 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    def action_import_excel(self):
+        """
+        Import detaylı vergi bilgileri from Excel file
+        - Match by UUID (ETTN column)
+        - UPDATE existing e.invoice records only
+        - NEVER INSERT new records
+        """
+        self.ensure_one()
+
+        if not self.excel_file:
+            raise UserError(_("Lütfen bir Excel dosyası yükleyin"))
+
+        import base64
+        import xlrd
+        from datetime import datetime
+        import logging
+
+        _logger = logging.getLogger(__name__)
+
+        # Decode Excel file
+        excel_data = base64.b64decode(self.excel_file)
+        
+        # Open with xlrd
+        try:
+            from io import BytesIO
+            wb = xlrd.open_workbook(file_contents=excel_data)
+            sheet = wb.sheet_by_index(0)
+        except Exception as e:
+            raise UserError(_("Excel dosyası okunamadı: %s") % str(e))
+
+        # Counters
+        total_rows = sheet.nrows - 1  # Header hariç
+        updated_count = 0
+        skipped_not_found = 0
+        skipped_locked = 0
+        skipped_invalid = 0
+        skipped_error = 0
+        error_details = []
+
+        # ✅ Hata kayıt listeleri (Tür, Tarih, Belge No, ETTN)
+        not_found_records = []  # UUID bulunamayan kayıtlar
+        error_records = []      # Veri hatası olan kayıtlar
+
+        start_time = datetime.now()
+
+        # Process each row (skip header)
+        for row_idx in range(1, sheet.nrows):
+            try:
+                # Extract row data - Columns: Tür(0), Tarih(1), Belge No(2), ETTN(3)
+                tur = str(sheet.cell_value(row_idx, 0)).strip() if sheet.ncols > 0 else ''
+                tarih_raw = sheet.cell_value(row_idx, 1) if sheet.ncols > 1 else ''
+                belge_no = str(sheet.cell_value(row_idx, 2)).strip() if sheet.ncols > 2 else ''
+                ettn = str(sheet.cell_value(row_idx, 3)).strip() if sheet.ncols > 3 else ''
+
+                # Parse tarih (Excel date to string)
+                try:
+                    if isinstance(tarih_raw, float):  # Excel date number
+                        tarih = xlrd.xldate_as_datetime(tarih_raw, wb.datemode).strftime('%Y-%m-%d')
+                    else:
+                        tarih = str(tarih_raw).strip()
+                except:
+                    tarih = str(tarih_raw).strip()
+
+                if not ettn:
+                    skipped_error += 1
+                    error_details.append(f"Satır {row_idx + 1}: ETTN boş")
+                    # ✅ Hata kaydını listeye ekle
+                    error_records.append({
+                        'tur': tur,
+                        'tarih': tarih,
+                        'belge_no': belge_no,
+                        'ettn': ettn or 'BOŞ',
+                        'durum': 'ETTN Boş'
+                    })
+                    continue
+
+                # Find matching e.invoice by UUID (2-step search)
+                # Step 1: Search for valid invoices (gvn_active=True)
+                invoice = self.env['e.invoice'].search([
+                    ('uuid', '=', ettn),
+                    ('gvn_active', '=', True),
+                ], limit=1)
+
+                # Step 2: If not found, search for invalid invoices (gvn_active=False)
+                if not invoice:
+                    invoice = self.env['e.invoice'].search([
+                        ('uuid', '=', ettn),
+                        ('gvn_active', '=', False),
+                    ], limit=1)
+
+                    if invoice:
+                        _logger.info(f"ETTN: {ettn} - Geçersiz fatura bulundu, güncelleniyor (invoice_id: {invoice.invoice_id})")
+
+                # Step 3: If still not found, skip record
+                if not invoice:
+                    skipped_not_found += 1
+                    _logger.debug(f"ETTN: {ettn} - e.invoice'de bulunamadı (geçerli ve geçersiz aramalar başarısız)")
+                    # ✅ UUID bulunamayan kaydı listeye ekle
+                    not_found_records.append({
+                        'tur': tur,
+                        'tarih': tarih,
+                        'belge_no': belge_no,
+                        'ettn': ettn,
+                        'durum': 'UUID Bulunamadı'
+                    })
+                    continue
+
+                # Check if invoice is locked (v1.0.14)
+                if invoice.is_locked:
+                    skipped_locked += 1
+                    _logger.info(f"Excel Import: Kilitli kayıt atlandı - {invoice.invoice_id} (UUID: {ettn})")
+                    continue
+
+                # If validate_only, skip update
+                if self.validate_only:
+                    updated_count += 1
+                    continue
+
+                # Prepare tax detail data (141 fields)
+                tax_data = {}
+
+                # A. Fatura Tip ve Durum (2 fields) - Columns 10-11
+                if sheet.ncols > 10: tax_data['ft_tip'] = str(sheet.cell_value(row_idx, 10)).strip()
+                if sheet.ncols > 11: tax_data['ft_durum'] = str(sheet.cell_value(row_idx, 11)).strip()
+
+                # B. Basic Fields (8 fields) - Columns 15-22
+                if sheet.ncols > 14: tax_data['birim'] = str(sheet.cell_value(row_idx, 14)).strip()
+                if sheet.ncols > 15: tax_data['kur'] = self._safe_float(sheet.cell_value(row_idx, 15))
+                if sheet.ncols > 16: tax_data['odenecek_tutar'] = self._safe_float(sheet.cell_value(row_idx, 16))
+                if sheet.ncols > 17: tax_data['odenecek_tutar_tl'] = self._safe_float(sheet.cell_value(row_idx, 17))
+                if sheet.ncols > 18: tax_data['matrah'] = self._safe_float(sheet.cell_value(row_idx, 18))
+                if sheet.ncols > 19: tax_data['matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 19))
+                if sheet.ncols > 20: tax_data['iskonto_tutari'] = self._safe_float(sheet.cell_value(row_idx, 20))
+                if sheet.ncols > 21: tax_data['iskonto_tutari_tl'] = self._safe_float(sheet.cell_value(row_idx, 21))
+
+                # C. KDV Details (30 fields) - Columns 23-52
+                if sheet.ncols > 22: tax_data['kdv_0'] = self._safe_float(sheet.cell_value(row_idx, 22))
+                if sheet.ncols > 23: tax_data['kdv_0_matrah'] = self._safe_float(sheet.cell_value(row_idx, 23))
+                if sheet.ncols > 24: tax_data['kdv_0_matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 24))
+                
+                if sheet.ncols > 25: tax_data['kdv_1_matrah'] = self._safe_float(sheet.cell_value(row_idx, 25))
+                if sheet.ncols > 26: tax_data['kdv_1_matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 26))
+                if sheet.ncols > 27: tax_data['kdv_1'] = self._safe_float(sheet.cell_value(row_idx, 27))
+                if sheet.ncols > 28: tax_data['kdv_1_tl'] = self._safe_float(sheet.cell_value(row_idx, 28))
+                
+                if sheet.ncols > 29: tax_data['kdv_8_matrah'] = self._safe_float(sheet.cell_value(row_idx, 29))
+                if sheet.ncols > 30: tax_data['kdv_8_matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 30))
+                if sheet.ncols > 31: tax_data['kdv_8'] = self._safe_float(sheet.cell_value(row_idx, 31))
+                if sheet.ncols > 32: tax_data['kdv_8_tl'] = self._safe_float(sheet.cell_value(row_idx, 32))
+                
+                if sheet.ncols > 33: tax_data['kdv_10'] = self._safe_float(sheet.cell_value(row_idx, 33))
+                if sheet.ncols > 34: tax_data['kdv_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 34))
+                if sheet.ncols > 35: tax_data['kdv_10_tl'] = self._safe_float(sheet.cell_value(row_idx, 35))
+                if sheet.ncols > 36: tax_data['kdv_10_matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 36))
+                
+                if sheet.ncols > 37: tax_data['kdv_18_matrah'] = self._safe_float(sheet.cell_value(row_idx, 37))
+                if sheet.ncols > 38: tax_data['kdv_18_matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 38))
+                if sheet.ncols > 39: tax_data['kdv_18'] = self._safe_float(sheet.cell_value(row_idx, 39))
+                if sheet.ncols > 40: tax_data['kdv_18_tl'] = self._safe_float(sheet.cell_value(row_idx, 40))
+                
+                if sheet.ncols > 41: tax_data['kdv_20'] = self._safe_float(sheet.cell_value(row_idx, 41))
+                if sheet.ncols > 42: tax_data['kdv_20_matrah'] = self._safe_float(sheet.cell_value(row_idx, 42))
+                if sheet.ncols > 43: tax_data['kdv_20_tl'] = self._safe_float(sheet.cell_value(row_idx, 43))
+                if sheet.ncols > 44: tax_data['kdv_20_matrah_tl'] = self._safe_float(sheet.cell_value(row_idx, 44))
+                
+                if sheet.ncols > 45: tax_data['toplam_kdv'] = self._safe_float(sheet.cell_value(row_idx, 45))
+                if sheet.ncols > 46: tax_data['toplam_kdv_tl'] = self._safe_float(sheet.cell_value(row_idx, 46))
+                if sheet.ncols > 47: tax_data['toplam_vergi'] = self._safe_float(sheet.cell_value(row_idx, 47))
+
+                # D. Tevkifat (12 fields) - Columns 53-64
+                if sheet.ncols > 48: tax_data['tevkifat_2_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 48))
+                if sheet.ncols > 49: tax_data['tevkifat_2_10_kdv'] = self._safe_float(sheet.cell_value(row_idx, 49))
+                if sheet.ncols > 50: tax_data['tevkifat_3_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 50))
+                if sheet.ncols > 51: tax_data['tevkifat_3_10_kdv'] = self._safe_float(sheet.cell_value(row_idx, 51))
+                if sheet.ncols > 52: tax_data['tevkifat_4_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 52))
+                if sheet.ncols > 53: tax_data['tevkifat_4_10_kdv'] = self._safe_float(sheet.cell_value(row_idx, 53))
+                if sheet.ncols > 54: tax_data['tevkifat_5_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 54))
+                if sheet.ncols > 55: tax_data['tevkifat_5_10_kdv'] = self._safe_float(sheet.cell_value(row_idx, 55))
+                if sheet.ncols > 56: tax_data['tevkifat_7_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 56))
+                if sheet.ncols > 57: tax_data['tevkifat_7_10_kdv'] = self._safe_float(sheet.cell_value(row_idx, 57))
+                if sheet.ncols > 58: tax_data['tevkifat_9_10_matrah'] = self._safe_float(sheet.cell_value(row_idx, 58))
+                if sheet.ncols > 59: tax_data['tevkifat_9_10_kdv'] = self._safe_float(sheet.cell_value(row_idx, 59))
+
+                # E. Stopaj (3 fields) - Columns 86-88
+                if sheet.ncols > 86: tax_data['stopaj_tutari'] = self._safe_float(sheet.cell_value(row_idx, 86))
+                if sheet.ncols > 87: tax_data['stopaj_tutari_matrah'] = self._safe_float(sheet.cell_value(row_idx, 87))
+                if sheet.ncols > 88: tax_data['stopaj_tutari_tl'] = self._safe_float(sheet.cell_value(row_idx, 88))
+
+                # F. Konaklama Vergisi (4 fields) - Columns 151-154
+                if sheet.ncols > 151: tax_data['konaklama_vergisi_2'] = self._safe_float(sheet.cell_value(row_idx, 151))
+                if sheet.ncols > 152: tax_data['konaklama_vergisi_2_matrah'] = self._safe_float(sheet.cell_value(row_idx, 152))
+                if sheet.ncols > 153: tax_data['konaklama_vergisi_2_tl'] = self._safe_float(sheet.cell_value(row_idx, 153))
+                if sheet.ncols > 154: tax_data['konaklama_vergisi_2_tl_matrah'] = self._safe_float(sheet.cell_value(row_idx, 154))
+
+                # G. Vergi Muafiyet Info (2 fields) - Columns 137-138
+                if sheet.ncols > 137: tax_data['vergi_muafiyet_kodu'] = str(sheet.cell_value(row_idx, 137)).strip()
+                if sheet.ncols > 138: tax_data['vergi_muafiyet_sebebi'] = str(sheet.cell_value(row_idx, 138)).strip()
+
+                # H. Tevkifat Info (2 fields) - Columns 157-158
+                if sheet.ncols > 157: tax_data['tevkifat_kodu'] = str(sheet.cell_value(row_idx, 157)).strip()
+                if sheet.ncols > 158: tax_data['tevkifat_aciklamasi'] = str(sheet.cell_value(row_idx, 158)).strip()
+
+                # ✅ TRY Birim Kontrolü: TRY ise kaynak alanları TL alanlarına kopyala
+                if tax_data.get('birim') == 'TRY':
+                    # Kaynak → Hedef eşlemeleri
+                    field_mappings = {
+                        'matrah': 'matrah_tl',
+                        'iskonto_tutari': 'iskonto_tutari_tl',
+                        'kdv_1': 'kdv_1_tl',
+                        'kdv_10': 'kdv_10_tl',
+                        'kdv_20': 'kdv_20_tl',
+                        'toplam_kdv': 'toplam_kdv_tl',
+                        'kdv_1_matrah': 'kdv_1_matrah_tl',
+                        'kdv_10_matrah': 'kdv_10_matrah_tl',
+                        'kdv_20_matrah': 'kdv_20_matrah_tl',
+                        'konaklama_vergisi_2': 'konaklama_vergisi_2_tl',
+                        'konaklama_vergisi_2_matrah': 'konaklama_vergisi_2_tl_matrah',
+                    }
+                    # Kaynak alanda değer varsa hedef alana kopyala
+                    for source, target in field_mappings.items():
+                        if source in tax_data and tax_data[source]:
+                            tax_data[target] = tax_data[source]
+
+                # E. Excel Tracking Fields
+                tax_data['excel_imported'] = True
+                tax_data['excel_import_date'] = fields.Datetime.now()
+                tax_data['excel_import_user_id'] = self.env.user.id
+
+                # UPDATE existing record
+                invoice.write(tax_data)
+                updated_count += 1
+
+                # Progress update and commit every 500 records (performance optimization for large files)
+                if row_idx % 500 == 0:
+                    progress_text = f"İşleniyor: {row_idx}/{total_rows} ({int(row_idx*100/total_rows)}%)\nGüncellenen: {updated_count} | Atlanan: {skipped_not_found + skipped_locked + skipped_error}"
+                    self.progress = progress_text
+                    self.env.cr.commit()  # Commit every 500 records to prevent timeout
+
+            except Exception as e:
+                skipped_error += 1
+                error_msg = f"Satır {row_idx + 1}: {str(e)}"
+                error_details.append(error_msg)
+                _logger.error(f"ETTN: {ettn if 'ettn' in locals() else 'N/A'} - Hata: {str(e)}")
+                # ✅ Veri hatası olan kaydı listeye ekle
+                error_records.append({
+                    'tur': tur if 'tur' in locals() else '',
+                    'tarih': tarih if 'tarih' in locals() else '',
+                    'belge_no': belge_no if 'belge_no' in locals() else '',
+                    'ettn': ettn if 'ettn' in locals() else '',
+                    'durum': f'Veri Hatası: {str(e)[:50]}'
+                })
+
+        # Final commit for remaining records
+        self.env.cr.commit()
+
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        # ✅ CSV Hata Raporu Oluştur
+        if not_found_records or error_records:
+            import csv
+            from io import StringIO
+
+            csv_output = StringIO()
+            csv_writer = csv.writer(csv_output, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+
+            # CSV Header
+            csv_writer.writerow(['Tür', 'Tarih', 'Belge No', 'ETTN', 'Durum'])
+
+            # UUID bulunamayan kayıtlar
+            for record in not_found_records:
+                csv_writer.writerow([
+                    record['tur'],
+                    record['tarih'],
+                    record['belge_no'],
+                    record['ettn'],
+                    record['durum']
+                ])
+
+            # Veri hatası olan kayıtlar
+            for record in error_records:
+                csv_writer.writerow([
+                    record['tur'],
+                    record['tarih'],
+                    record['belge_no'],
+                    record['ettn'],
+                    record['durum']
+                ])
+
+            # CSV'yi base64 encode et
+            csv_content = csv_output.getvalue()
+            csv_base64 = base64.b64encode(csv_content.encode('utf-8-sig'))
+
+            # Dosya adı oluştur
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            error_file_name = f'hata_raporu_{timestamp}.csv'
+
+            # Wizard'a kaydet
+            self.write({
+                'error_file': csv_base64,
+                'error_file_name': error_file_name
+            })
+
+        # Generate summary report
+        summary = f"""
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #2E7D32; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">
+                📊 Detaylı Vergi Excel İmport Sonuçları
+            </h2>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <tr style="background-color: #E8F5E9;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">✅ Başarıyla Güncellenen:</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; color: #2E7D32; font-size: 18px;"><strong>{updated_count:,}</strong></td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">⚠️ UUID Bulunamadı:</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; color: #FF9800;">{skipped_not_found:,}</td>
+                </tr>
+                <tr style="background-color: #FFF8E1;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">🔒 Kilitli Kayıt (Atlandı):</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; color: #F57C00;">{skipped_locked:,}</td>
+                </tr>
+                <tr style="background-color: #FFF3E0;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">❌ Veri Hatası:</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; color: #D32F2F;">{skipped_error:,}</td>
+                </tr>
+                <tr style="background-color: #E3F2FD;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">📋 Toplam İşlenen:</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{total_rows:,}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">⏱️ İşlem Süresi:</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{int(duration // 60)} dakika {int(duration % 60)} saniye</td>
+                </tr>
+            </table>
+        """
+
+        if error_details and len(error_details) <= 50:  # Show first 50 errors
+            summary += """
+            <h3 style="color: #D32F2F; margin-top: 20px;">Hata Detayları:</h3>
+            <div style="background-color: #FFEBEE; padding: 10px; border-left: 4px solid #D32F2F; max-height: 300px; overflow-y: auto;">
+                <ul style="margin: 0; padding-left: 20px;">
+        """
+            for error in error_details[:50]:
+                summary += f"<li>{error}</li>"
+            if len(error_details) > 50:
+                summary += f"<li><em>... ve {len(error_details) - 50} hata daha</em></li>"
+            summary += """
+                </ul>
+            </div>
+        """
+
+        # ✅ Hata Raporu İndirme Linki Ekle
+        if not_found_records or error_records:
+            total_error_count = len(not_found_records) + len(error_records)
+            summary += f"""
+            <div style="background-color: #FFF3E0; padding: 15px; margin-top: 20px; border: 2px solid #FF9800; border-radius: 5px;">
+                <h3 style="color: #E65100; margin-top: 0;">📥 Hata Raporu İndirilebilir</h3>
+                <p style="margin: 10px 0;">
+                    <strong>{total_error_count:,}</strong> adet hatalı/bulunamayan kayıt tespit edildi.
+                </p>
+                <p style="margin: 10px 0; font-size: 14px;">
+                    📄 <strong>Tür, Tarih, Belge No, ETTN</strong> bilgilerini içeren CSV dosyasını indirmek için
+                    aşağıdaki "Hata Raporu İndir" alanını kullanın.
+                </p>
+            </div>
+            """
+
+        summary += "</div>"
+
+        self.result_summary = summary
+        self.progress = "✅ İşlem tamamlandı!"
+
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }

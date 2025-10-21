@@ -75,8 +75,8 @@
                 </header>
             </xpath>
             
-            <!-- Logo bilgilerini forma ekle -->
-            <xpath expr="//group[@name='other_info']" position="after">
+            <!-- Logo bilgilerini TAB-3 (Notlar ve Kilit) sekmesine ekle -->
+            <xpath expr="//page[@name='notlar_kilit']" position="inside">
                 <group string="Logo Entegrasyonu" name="logo_info">
                     <field name="exists_in_logo" widget="boolean_button" readonly="1"/>
                     <field name="logo_record_id" readonly="1"/>
@@ -85,18 +85,19 @@
         </field>
     </record>
 
-    <!-- E-Invoice List View'a Action Ekleme -->
-    <record id="view_e_invoice_list_logo_sync" model="ir.ui.view">
-        <field name="name">e.invoice.list.logo.sync</field>
+    <!-- E-Invoice List View Logo Sync Extension - DISABLED (exists_in_logo already in base view v3) -->
+    <!--
+    <record id="view_e_invoice_list_logo_sync_v2" model="ir.ui.view">
+        <field name="name">e.invoice.list.logo.sync.v2</field>
         <field name="model">e.invoice</field>
-        <field name="inherit_id" ref="view_e_invoice_list"/>
+        <field name="inherit_id" ref="view_e_invoice_list_v3"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='gvn_active']" position="after">
                 <field name="exists_in_logo" widget="boolean_toggle" readonly="1"/>
-                <!-- <field name="logo_record_id" readonly="1"/> -->
             </xpath>
         </field>
     </record>
+    -->
 
     <!-- Server Action for Multi-Record Sync (Odoo 18 Compatible) -->
     <record id="server_action_logo_sync_multi" model="ir.actions.server">
@@ -298,9 +299,9 @@ if records:
                                 <field name="cron3_enabled"/>
                             </div>
                             <div class="o_setting_right_pane">
-                                <label for="cron3_enabled" string="Logo Monthly Sync (7 Günlük Periyotlar)"/>
+                                <label for="cron3_enabled" string="Logo Monthly Sync (Aylık Periyotlar)"/>
                                 <div class="text-muted">
-                                    Belirtilen tarih aralığında 7 günlük periyotlarla Logo senkronizasyonu
+                                    Belirtilen tarih aralığında aylık (30 günlük) periyotlarla Logo senkronizasyonu
                                 </div>
                                 <div class="content-group" invisible="cron3_enabled == False">
                                     <div class="row mt8">
@@ -336,7 +337,7 @@ if records:
                                     </div>
                                     <div class="text-info mt8">
                                         <i class="fa fa-info-circle"/> 10 dakikada bir kontrol eder, sadece çalışma saatleri içinde işlem yapar.
-                                        7 günlük periyotlarla Logo ile senkronizasyon yapar. Bitiş tarihine ulaştığında başlangıç tarihine döner.
+                                        Aylık (30 günlük) periyotlarla Logo ile senkronizasyon yapar. Bitiş tarihine ulaştığında durur.
                                     </div>
                                 </div>
                             </div>

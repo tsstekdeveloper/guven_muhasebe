@@ -11,12 +11,12 @@
               parent="menu_e_invoice_main"
               sequence="10"/>
 
-    <menuitem id="menu_e_invoice_list" 
+    <menuitem id="menu_e_invoice_list"
               name="e-faturalar"
               parent="menu_invoice_list"
               action="action_e_invoice"
               sequence="10"/>
-    
+
     <!-- Reports Menu -->
     <menuitem id="menu_e_invoice_reports" 
               name="Raporlar"
@@ -54,7 +54,7 @@
               sequence="10"/>
 
     <!-- Sync Menu -->
-    <menuitem id="main_sync_menu" 
+    <menuitem id="main_sync_menu"
               name="Senkronizasyon"
               parent="menu_e_invoice_main"
               sequence="20"/>
@@ -76,6 +76,12 @@
               parent="main_sync_menu"
               action="action_earsiv_excel_import_wizard"
               sequence="30"/>
+
+    <menuitem id="menu_tax_detail_import"
+              name="Detaylı Vergi Excel'i İçeri Al"
+              parent="main_sync_menu"
+              action="action_e_invoice_tax_detail_import_wizard"
+              sequence="40"/>
 
     <!-- Configuration Menu -->
     <menuitem id="menu_e_invoice_config" 

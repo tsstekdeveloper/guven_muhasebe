@@ -1,35 +1,135 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- E-Invoice list View -->
-    <record id="view_e_invoice_list" model="ir.ui.view">
-        <field name="name">e.invoice.list</field>
+    <!-- E-Invoice list View (v1.0.19) - Rebuilt -->
+    <record id="view_e_invoice_list_v3" model="ir.ui.view">
+        <field name="name">e.invoice.list.v3</field>
         <field name="model">e.invoice</field>
+        <field name="priority">30</field>
         <field name="arch" type="xml">
             <list string="E-Faturalar" default_order="issue_date, invoice_id">
+                <!-- Hidden field for decoration -->
                 <field name="is_cancellation" invisible="1"/>
+
+                <!-- Zorunlu Fieldlar (21 adet - optional="show") -->
+                <field name="kaynak" optional="show"/>
+                <field name="direction" optional="show"/>
                 <field name="invoice_id" optional="show" decoration-danger="is_cancellation == True"/>
                 <field name="issue_date" optional="show"/>
                 <field name="supplier" optional="show"/>
                 <field name="customer" optional="show"/>
-                <field name="payable_amount" sum="Total" optional="show"/>
-                <field name="direction" optional="show"/>
-                <field name="kaynak" optional="show"/>
-                <field name="status_detail" optional="show"/>
-                <field name="response_code" optional="hide"/>
+                <field name="birim" optional="show"/>
+                <field name="kur" optional="show"/>
+                <field name="odenecek_tutar" optional="show"/>
+                <field name="odenecek_tutar_tl" optional="show"/>
                 <field name="gvn_active" optional="show"/>
-                <field name="is_locked" widget="boolean_toggle" optional="show"/>
+                <field name="exists_in_logo" optional="show"/>
+                <field name="matrah" optional="show"/>
+                <field name="matrah_tl" optional="show"/>
+                <field name="kdv_1_tl" optional="show"/>
+                <field name="kdv_10_tl" optional="show"/>
+                <field name="kdv_20_tl" optional="show"/>
+                <field name="toplam_kdv_tl" optional="show"/>
+                <field name="ft_tip" optional="show"/>
+                <field name="ft_durum" optional="show"/>
+                <field name="harici_iptal" widget="boolean_toggle" optional="show"/>
+
+                <!-- Opsiyonel Fieldlar (64 adet - optional="hide") -->
+                <field name="active" optional="hide"/>
+                <field name="allowance_total_amount" optional="hide"/>
+                <field name="cancelled_invoice_id" optional="hide"/>
+                <field name="cancellation_ids" optional="hide"/>
+                <field name="create_date_ws" optional="hide"/>
+                <field name="currency_code" optional="hide"/>
+                <field name="earchive_type" optional="hide"/>
+                <field name="envelope_identifier" optional="hide"/>
+                <field name="excel_import_date" optional="hide"/>
+                <field name="excel_import_user_id" optional="hide"/>
+                <field name="excel_imported" optional="hide"/>
+                <field name="from_field" optional="hide"/>
+                <field name="gib_status_code" optional="hide"/>
+                <field name="gib_status_description" optional="hide"/>
+                <field name="invoice_type_code" optional="hide"/>
+                <field name="is_locked" widget="boolean_toggle" optional="hide"/>
+                <field name="iskonto_tutari" optional="hide"/>
+                <field name="iskonto_tutari_tl" optional="hide"/>
+                <field name="kdv_0" optional="hide"/>
+                <field name="kdv_0_matrah" optional="hide"/>
+                <field name="kdv_0_matrah_tl" optional="hide"/>
+                <field name="kdv_1" optional="hide"/>
+                <field name="kdv_1_matrah" optional="hide"/>
+                <field name="kdv_1_matrah_tl" optional="hide"/>
+                <field name="kdv_8" optional="hide"/>
+                <field name="kdv_8_matrah" optional="hide"/>
+                <field name="kdv_8_matrah_tl" optional="hide"/>
+                <field name="kdv_8_tl" optional="hide"/>
+                <field name="kdv_10" optional="hide"/>
+                <field name="kdv_10_matrah" optional="hide"/>
+                <field name="kdv_10_matrah_tl" optional="hide"/>
+                <field name="kdv_18" optional="hide"/>
+                <field name="kdv_18_matrah" optional="hide"/>
+                <field name="kdv_18_matrah_tl" optional="hide"/>
+                <field name="kdv_18_tl" optional="hide"/>
+                <field name="kdv_20" optional="hide"/>
+                <field name="kdv_20_matrah" optional="hide"/>
+                <field name="konaklama_vergisi_2" optional="hide"/>
+                <field name="konaklama_vergisi_2_matrah" optional="hide"/>
+                <field name="konaklama_vergisi_2_tl" optional="hide"/>
+                <field name="konaklama_vergisi_2_tl_matrah" optional="hide"/>
+                <field name="line_extension_amount" optional="hide"/>
+                <field name="lock_reason" optional="hide"/>
+                <field name="locked_by_id" optional="hide"/>
+                <field name="locked_date" optional="hide"/>
+                <field name="logo_record_id" optional="hide"/>
+                <field name="notes" optional="hide"/>
+                <field name="payable_amount" optional="hide"/>
+                <field name="profile_id" optional="hide"/>
+                <field name="receiver" optional="hide"/>
+                <field name="reported" optional="hide"/>
+                <field name="response_code" optional="hide"/>
+                <field name="response_description" optional="hide"/>
+                <field name="sender" optional="hide"/>
+                <field name="sending_type" optional="hide"/>
+                <field name="status" optional="hide"/>
+                <field name="status_code" optional="hide"/>
+                <field name="status_description" optional="hide"/>
+                <field name="status_detail" optional="hide"/>
+                <field name="stopaj_tutari" optional="hide"/>
+                <field name="stopaj_tutari_matrah" optional="hide"/>
+                <field name="stopaj_tutari_tl" optional="hide"/>
+                <field name="tax_exclusive_total_amount" optional="hide"/>
+                <field name="tax_inclusive_total_amount" optional="hide"/>
+                <field name="tevkifat_2_10_kdv" optional="hide"/>
+                <field name="tevkifat_2_10_matrah" optional="hide"/>
+                <field name="tevkifat_3_10_kdv" optional="hide"/>
+                <field name="tevkifat_3_10_matrah" optional="hide"/>
+                <field name="tevkifat_4_10_kdv" optional="hide"/>
+                <field name="tevkifat_4_10_matrah" optional="hide"/>
+                <field name="tevkifat_5_10_kdv" optional="hide"/>
+                <field name="tevkifat_5_10_matrah" optional="hide"/>
+                <field name="tevkifat_7_10_kdv" optional="hide"/>
+                <field name="tevkifat_7_10_matrah" optional="hide"/>
+                <field name="tevkifat_9_10_kdv" optional="hide"/>
+                <field name="tevkifat_9_10_matrah" optional="hide"/>
+                <field name="tevkifat_aciklamasi" optional="hide"/>
+                <field name="tevkifat_kodu" optional="hide"/>
+                <field name="to_field" optional="hide"/>
+                <field name="toplam_kdv" optional="hide"/>
+                <field name="toplam_vergi" optional="hide"/>
+                <field name="uuid" optional="hide"/>
+                <field name="vergi_muafiyet_kodu" optional="hide"/>
+                <field name="vergi_muafiyet_sebebi" optional="hide"/>
             </list>
         </field>
     </record>
 
-    <!-- E-Invoice Form View -->
+    <!-- E-Invoice Form View (v2.0 - Restructured) -->
     <record id="view_e_invoice_form" model="ir.ui.view">
         <field name="name">e.invoice.form</field>
         <field name="model">e.invoice</field>
         <field name="arch" type="xml">
             <form string="E-Fatura">
                 <header>
-                    <!-- Kilit Mekanizması Butonları (v1.0.5) -->
+                    <!-- Kilit Mekanizması Butonları -->
                     <button name="action_lock"
                             type="object"
                             string="Kilitle"
@@ -42,93 +142,268 @@
                             invisible="not is_locked"/>
                 </header>
                 <sheet>
-<!--                     <div class="oe_button_box" name="button_box">
-                        <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive">
-                            <field name="active" widget="boolean_button" options='{"terminology": "archive"}'/>
-                        </button>
-                    </div>
+                    <!-- === HEADER BİLGİLERİ === -->
                     <div class="oe_title">
                         <h1>
                             <field name="invoice_id" readonly="1"/>
                         </h1>
-                    </div> -->
+                        <h3>
+                            <field name="issue_date" readonly="1"/>
+                        </h3>
+                    </div>
                     <group>
-                        <group name="main_info" string="Ana Bilgiler" readonly="is_locked">
-                            <field name="uuid" readonly="1"/>
-                            <field name="direction"/>
-                            <field name="kaynak"/>
-                            <field name="issue_date"/>
-                            <field name="create_date_ws"/>
-                            <field name="invoice_type_code"/>
-                            <field name="profile_id"/>
-                            <!-- E-Arşiv Özel Alanları -->
-                            <field name="currency_code" readonly="1" invisible="kaynak != 'e-arsiv'"/>
-                            <field name="reported" readonly="1" invisible="kaynak != 'e-arsiv'"/>
-                            <field name="earchive_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
-                            <field name="sending_type" readonly="1" invisible="kaynak != 'e-arsiv'"/>
-                            <!-- İptal İlişkisi (v1.0.7) -->
-                            <field name="is_cancellation" readonly="1" invisible="kaynak != 'e-arsiv'"/>
-                            <field name="cancelled_invoice_id" readonly="1" invisible="is_cancellation == False" options="{'no_create': True, 'no_create_edit': True}"/>
-                        </group>
-                        <group name="status_info" string="Durum Bilgileri" readonly="is_locked">
-                            <field name="status_detail"/>
-                            <field name="status"/>
-                            <field name="status_description"/>
-                            <field name="status_code"/>
-                            <field name="response_code"/>
-                            <field name="response_description"/>
-                            <field name="gib_status_code"/>
-                            <field name="gib_status_description"/>
-                        </group>
-                    </group>
-                    <group>
-                        <group name="sender_info" string="Gönderen/Alıcı" readonly="is_locked">
-                            <field name="sender"/>
-                            <field name="receiver"/>
-                            <field name="supplier"/>
-                            <field name="customer"/>
-                            <field name="from_field"/>
-                            <field name="to_field"/>
-                        </group>
-                        <group name="financial_info" string="Finansal Bilgiler" readonly="is_locked">
-                            <field name="payable_amount"/>
-                            <field name="tax_exclusive_total_amount"/>
-                            <field name="tax_inclusive_total_amount"/>
-                            <field name="allowance_total_amount"/>
-                            <field name="line_extension_amount"/>
-                        </group>
-                    </group>
-                    <group name="other_info" string="Diğer Bilgiler" readonly="is_locked">
-                        <field name="envelope_identifier"/>
-                    </group>
-                    <!-- Kilit Bilgileri (v1.0.5) -->
-                    <group name="lock_info" string="Kilit Bilgileri" invisible="not is_locked">
                         <group>
-                            <field name="is_locked" widget="boolean_toggle"/>
-                            <field name="locked_by_id"/>
+                            <field name="gvn_active" widget="boolean_toggle"/>
+                            <field name="exists_in_logo" widget="boolean_toggle"/>
                         </group>
                         <group>
-                            <field name="locked_date"/>
-                            <field name="lock_reason"/>
+                            <field name="odenecek_tutar_tl" readonly="1" widget="monetary" options="{'currency_field': 'currency_code'}"/>
                         </group>
                     </group>
+
                     <notebook>
-                        <page string="Notlar">
-                            <field name="notes" placeholder="Fatura ile ilgili notlarınızı buraya yazabilirsiniz..." readonly="is_locked"/>
-                        </page>
-                        <page string="İptal Kayıtları" invisible="is_cancellation == True or kaynak != 'e-arsiv'">
+                        <!-- === TAB 1: ANA BİLGİLER === -->
+                        <page string="Ana Bilgiler" name="ana_bilgiler">
                             <group>
-                                <field name="cancellation_ids" nolabel="1">
-                                    <list string="İptal Kayıtları" create="0" delete="0">
-                                        <field name="invoice_id"/>
-                                        <field name="uuid"/>
-                                        <field name="issue_date"/>
-                                        <field name="profile_id"/>
-                                        <field name="status_detail"/>
-                                        <field name="create_date"/>
-                                    </list>
-                                </field>
+                                <group string="Kimlik Bilgileri" readonly="is_locked">
+                                    <field name="uuid" readonly="1"/>
+                                    <field name="invoice_id" readonly="1"/>
+                                    <field name="issue_date" readonly="1"/>
+                                    <field name="kaynak"/>
+                                    <field name="direction"/>
+                                </group>
+                                <group string="Taraflar" readonly="is_locked">
+                                    <field name="supplier"/>
+                                    <field name="customer"/>
+                                    <field name="sender"/>
+                                    <field name="receiver"/>
+                                </group>
                             </group>
+                            <group>
+                                <group string="Finansal Bilgiler" readonly="is_locked">
+                                    <field name="birim"/>
+                                    <field name="kur"/>
+                                    <field name="odenecek_tutar"/>
+                                    <field name="odenecek_tutar_tl"/>
+                                    <field name="matrah"/>
+                                    <field name="matrah_tl"/>
+                                </group>
+                                <group string="Fatura Durumu" readonly="is_locked">
+                                    <field name="ft_tip"/>
+                                    <field name="ft_durum"/>
+                                    <field name="harici_iptal" widget="boolean_toggle"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- === TAB 2: GİB DURUM BİLGİLERİ === -->
+                        <page string="GİB Durum Bilgileri" name="gib_durum">
+                            <group>
+                                <group string="Fatura Profil Bilgileri" readonly="is_locked">
+                                    <field name="profile_id"/>
+                                    <field name="invoice_type_code"/>
+                                </group>
+                                <group string="Durum Kodları" readonly="is_locked">
+                                    <field name="status"/>
+                                    <field name="status_description"/>
+                                    <field name="status_code"/>
+                                    <field name="status_detail"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="GİB Durum" readonly="is_locked">
+                                    <field name="gib_status_code"/>
+                                    <field name="gib_status_description"/>
+                                </group>
+                                <group string="Yanıt Bilgileri" readonly="is_locked">
+                                    <field name="response_code"/>
+                                    <field name="response_description"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- === TAB 3: NOTLAR ve KİLİT === -->
+                        <page string="Notlar ve Kilit" name="notlar_kilit">
+                            <group>
+                                <group string="Kilit Bilgileri">
+                                    <field name="is_locked" widget="boolean_toggle"/>
+                                    <field name="locked_by_id" readonly="1"/>
+                                    <field name="locked_date" readonly="1"/>
+                                </group>
+                                <group>
+                                    <field name="lock_reason" nolabel="1" placeholder="Kilitleme nedeni..."/>
+                                </group>
+                            </group>
+                            <group string="Notlar">
+                                <field name="notes" nolabel="1" placeholder="Fatura notları..." readonly="is_locked"/>
+                            </group>
+                        </page>
+
+                        <!-- === TAB 4: KDV DETAYLARI === -->
+                        <page string="KDV Detayları" name="kdv_detaylari">
+                            <notebook>
+                                <!-- === TAB 4-1: KDV Toplamları === -->
+                                <page string="KDV Toplamları" name="kdv_toplamlar">
+                                    <group>
+                                        <group string="Toplam KDV" readonly="is_locked">
+                                            <field name="toplam_kdv"/>
+                                            <field name="toplam_kdv_tl"/>
+                                        </group>
+                                        <group string="Toplam Vergi" readonly="is_locked">
+                                            <field name="toplam_vergi"/>
+                                        </group>
+                                    </group>
+                                </page>
+
+                                <!-- === TAB 4-2: KDV %1 === -->
+                                <page string="KDV %1" name="kdv_1">
+                                    <group>
+                                        <group string="Matrah" readonly="is_locked">
+                                            <field name="kdv_1_matrah"/>
+                                            <field name="kdv_1_matrah_tl"/>
+                                        </group>
+                                        <group string="KDV Tutarı" readonly="is_locked">
+                                            <field name="kdv_1"/>
+                                            <field name="kdv_1_tl"/>
+                                        </group>
+                                    </group>
+                                </page>
+
+                                <!-- === TAB 4-3: KDV %10 === -->
+                                <page string="KDV %10" name="kdv_10">
+                                    <group>
+                                        <group string="Matrah" readonly="is_locked">
+                                            <field name="kdv_10_matrah"/>
+                                            <field name="kdv_10_matrah_tl"/>
+                                        </group>
+                                        <group string="KDV Tutarı" readonly="is_locked">
+                                            <field name="kdv_10"/>
+                                            <field name="kdv_10_tl"/>
+                                        </group>
+                                    </group>
+                                </page>
+
+                                <!-- === TAB 4-4: KDV %20 === -->
+                                <page string="KDV %20" name="kdv_20">
+                                    <group>
+                                        <group string="Matrah" readonly="is_locked">
+                                            <field name="kdv_20_matrah"/>
+                                            <field name="kdv_20_matrah_tl"/>
+                                        </group>
+                                        <group string="KDV Tutarı" readonly="is_locked">
+                                            <field name="kdv_20"/>
+                                            <field name="kdv_20_tl"/>
+                                        </group>
+                                    </group>
+                                </page>
+                            </notebook>
+                        </page>
+
+                        <!-- === TAB 5: TEVKİFAT === -->
+                        <page string="Tevkifat" name="tevkifat">
+                            <group string="Tevkifat Bilgileri" readonly="is_locked">
+                                <field name="tevkifat_kodu"/>
+                                <field name="tevkifat_aciklamasi"/>
+                            </group>
+                            <group>
+                                <group string="2/10 Tevkifat" readonly="is_locked">
+                                    <field name="tevkifat_2_10_matrah"/>
+                                    <field name="tevkifat_2_10_kdv"/>
+                                </group>
+                                <group string="3/10 Tevkifat" readonly="is_locked">
+                                    <field name="tevkifat_3_10_matrah"/>
+                                    <field name="tevkifat_3_10_kdv"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="4/10 Tevkifat" readonly="is_locked">
+                                    <field name="tevkifat_4_10_matrah"/>
+                                    <field name="tevkifat_4_10_kdv"/>
+                                </group>
+                                <group string="5/10 Tevkifat" readonly="is_locked">
+                                    <field name="tevkifat_5_10_matrah"/>
+                                    <field name="tevkifat_5_10_kdv"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="7/10 Tevkifat" readonly="is_locked">
+                                    <field name="tevkifat_7_10_matrah"/>
+                                    <field name="tevkifat_7_10_kdv"/>
+                                </group>
+                                <group string="9/10 Tevkifat" readonly="is_locked">
+                                    <field name="tevkifat_9_10_matrah"/>
+                                    <field name="tevkifat_9_10_kdv"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- === TAB 6: STOPAJ ve KONAKLAMA VERGİSİ === -->
+                        <page string="Stopaj ve Konaklama Vergisi" name="stopaj_konaklama">
+                            <group>
+                                <group string="Stopaj" readonly="is_locked">
+                                    <field name="stopaj_tutari"/>
+                                    <field name="stopaj_tutari_matrah"/>
+                                    <field name="stopaj_tutari_tl"/>
+                                </group>
+                                <group string="Konaklama Vergisi (%2)" readonly="is_locked">
+                                    <field name="konaklama_vergisi_2"/>
+                                    <field name="konaklama_vergisi_2_matrah"/>
+                                    <field name="konaklama_vergisi_2_tl"/>
+                                    <field name="konaklama_vergisi_2_tl_matrah"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- === TAB 7: DİĞER BİLGİLER === -->
+                        <page string="Diğer Bilgiler" name="diger_bilgiler">
+                            <notebook>
+                                <!-- === TAB 7-1: İSKONTO BİLGİLERİ === -->
+                                <page string="İskonto Bilgileri" name="iskonto_bilgileri">
+                                    <group>
+                                        <group string="İskonto" readonly="is_locked">
+                                            <field name="iskonto_tutari"/>
+                                            <field name="iskonto_tutari_tl"/>
+                                        </group>
+                                        <group string="Vergi Muafiyeti" readonly="is_locked">
+                                            <field name="vergi_muafiyet_kodu"/>
+                                            <field name="vergi_muafiyet_sebebi"/>
+                                        </group>
+                                    </group>
+                                </page>
+
+                                <!-- === TAB 7-2: EXCEL TAKİBİ === -->
+                                <page string="Excel Takibi" name="excel_takibi">
+                                    <group string="Excel Import Bilgileri">
+                                        <group>
+                                            <field name="excel_imported" widget="boolean_toggle" readonly="1"/>
+                                            <field name="excel_import_date" readonly="1"/>
+                                        </group>
+                                        <group>
+                                            <field name="excel_import_user_id" readonly="1"/>
+                                        </group>
+                                    </group>
+                                </page>
+
+                                <!-- === TAB 7-3: İPTAL İLİŞKİSİ === -->
+                                <page string="İptal İlişkisi" name="iptal_iliskisi">
+                                    <group>
+                                        <group>
+                                            <field name="is_cancellation" readonly="1"/>
+                                            <field name="cancelled_invoice_id" readonly="1" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        </group>
+                                        <group>
+                                            <field name="cancellation_ids" nolabel="1">
+                                                <list string="İptal Kayıtları" create="0" delete="0">
+                                                    <field name="invoice_id"/>
+                                                    <field name="uuid"/>
+                                                    <field name="issue_date"/>
+                                                    <field name="status_detail"/>
+                                                </list>
+                                            </field>
+                                        </group>
+                                    </group>
+                                </page>
+                            </notebook>
                         </page>
                     </notebook>
                 </sheet>
@@ -193,6 +468,7 @@
         <field name="name">E-Faturalar</field>
         <field name="res_model">e.invoice</field>
         <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_e_invoice_list_v3"/>
         <field name="context">{'search_default_gvn_active': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -235,5 +511,18 @@
         <field name="res_model">e.invoice.sync.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
+    </record>
+
+    <!-- Server Action: Faturayı İptal'e Çek ve Kilitle -->
+    <record id="server_action_cancel_and_lock" model="ir.actions.server">
+        <field name="name">Faturayı İptal'e Çek ve Kilitle</field>
+        <field name="model_id" ref="model_e_invoice"/>
+        <field name="binding_model_id" ref="model_e_invoice"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+if records:
+    action = records.action_cancel_and_lock()
+        </field>
     </record>
 </odoo>
